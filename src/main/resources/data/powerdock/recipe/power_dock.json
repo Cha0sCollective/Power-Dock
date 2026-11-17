@@ -1,0 +1,15 @@
+{
+  "type": "create:mechanical_crafting",
+  "accept_mirrored": true,
+  "category": "misc",
+  "pattern": ["IWI", " W ", "PAP", "BEB"],
+  "key": {
+    "I": { "tag": "c:plates/iron" },
+    "W": { "item": "powergrid:insulated_copper_wire" },
+    "P": { "item": "minecraft:piston" },
+    "A": { "item": "create:brass_casing" },
+    "B": { "tag": "c:plates/brass" },
+    "E": { "item": "create:electron_tube" }
+  },
+  "result": { "id": "powerdock:power_dock", "count": 2 }
+}

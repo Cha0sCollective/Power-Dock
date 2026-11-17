@@ -1,0 +1,14 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="powerdock_tests"
+version="1"
+displayName="Power Dock GameTests"
+
+[[dependencies.powerdock_tests]]
+modId="powerdock"
+type="required"
+ordering="AFTER"
+side="SERVER"
