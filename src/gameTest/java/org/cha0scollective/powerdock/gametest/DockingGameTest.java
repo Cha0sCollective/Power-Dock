@@ -11,10 +11,13 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import org.patryk3211.powergrid.electricity.GlobalElectricNetworks;
+import org.patryk3211.powergrid.electricity.base.IDecoratedTerminal;
+import org.patryk3211.powergrid.electricity.base.IElectric;
 import org.patryk3211.powergrid.electricity.sim.node.CurrentSourceWire;
 import org.patryk3211.powergrid.electricity.wire.BlockWireEndpoint;
 
@@ -40,6 +43,7 @@ public final class DockingGameTest {
         }
         var dock = BuiltInRegistries.BLOCK.get(ResourceLocation.fromNamespaceAndPath("powerdock", "power_dock"))
                 .defaultBlockState();
+        verifyTerminalLabels(test, dock);
         level.setBlockAndUpdate(stationPos, dock.setValue(BlockStateProperties.FACING, Direction.EAST));
         level.setBlockAndUpdate(launchPos, dock.setValue(BlockStateProperties.FACING, Direction.EAST));
         level.setBlockAndUpdate(launchPower, Blocks.REDSTONE_BLOCK.defaultBlockState());
@@ -124,6 +128,25 @@ public final class DockingGameTest {
 
     private static boolean connected(ServerLevel level, BlockPos pos) {
         return level.getBlockState(pos).getAnalogOutputSignal(level, pos) == 15;
+    }
+
+    private static void verifyTerminalLabels(GameTestHelper test, BlockState dock) {
+        var electric = (IElectric) dock.getBlock();
+        for (Direction facing : Direction.values()) {
+            var state = dock.setValue(BlockStateProperties.FACING, facing);
+            var positive = electric.terminal(state, 0);
+            var negative = electric.terminal(state, 1);
+            test.assertTrue(positive instanceof IDecoratedTerminal label
+                            && label.getName().equals(IDecoratedTerminal.POSITIVE)
+                            && label.getColor() == IDecoratedTerminal.RED
+                            && electric.terminalIndexAt(state, positive.getOrigin()) == 0,
+                    "Positive terminal did not use the native Power Grid highlight while facing " + facing);
+            test.assertTrue(negative instanceof IDecoratedTerminal label
+                            && label.getName().equals(IDecoratedTerminal.NEGATIVE)
+                            && label.getColor() == IDecoratedTerminal.BLUE
+                            && electric.terminalIndexAt(state, negative.getOrigin()) == 1,
+                    "Negative terminal did not use the native Power Grid highlight while facing " + facing);
+        }
     }
 
     private static boolean deployed(ServerLevel level, BlockPos pos) {

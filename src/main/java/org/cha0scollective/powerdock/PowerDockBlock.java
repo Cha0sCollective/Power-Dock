@@ -21,6 +21,7 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.joml.Quaternionf;
 import org.patryk3211.powergrid.electricity.base.ElectricBlock;
+import org.patryk3211.powergrid.electricity.base.IDecoratedTerminal;
 import org.patryk3211.powergrid.electricity.base.ITerminalPlacement;
 import org.patryk3211.powergrid.electricity.base.TerminalBoundingBox;
 import org.patryk3211.powergrid.electricity.base.terminals.RotatedTerminalCollection;
@@ -36,10 +37,10 @@ public final class PowerDockBlock extends ElectricBlock implements IBE<PowerDock
     private static final RotatedTerminalCollection TERMINALS =
             RotatedTerminalCollection.builder(RotatedTerminalCollection::rotateNorthToFacing)
                     .with(Direction.values())
-                    .add(new TerminalBoundingBox(Component.translatable("powerdock.terminal.positive"),
-                            4, 14, 9, 7, 16, 13).withColor(0xe88b43),
-                         new TerminalBoundingBox(Component.translatable("powerdock.terminal.return"),
-                            9, 14, 9, 12, 16, 13).withColor(0x92a5b6))
+                    .add(new TerminalBoundingBox(IDecoratedTerminal.POSITIVE,
+                            4, 14, 9, 7, 16, 13).withColor(IDecoratedTerminal.RED),
+                         new TerminalBoundingBox(IDecoratedTerminal.NEGATIVE,
+                            9, 14, 9, 12, 16, 13).withColor(IDecoratedTerminal.BLUE))
                     .build();
     private static final RotatedTerminalCollection HOUSING =
             RotatedTerminalCollection.builder(RotatedTerminalCollection::rotateNorthToFacing)

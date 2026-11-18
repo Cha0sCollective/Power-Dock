@@ -6,14 +6,13 @@
     "steel": "powerdock:block/steel",
     "insulator": "powerdock:block/insulator",
     "contact_head": "powerdock:block/contact_head",
-    "left_cable": "powerdock:block/positive_cable",
-    "right_cable": "powerdock:block/return_cable"
+    "copper_wire": "powerdock:block/copper_wire"
   },
   "elements": [
     {"name": "sliding piston", "from": [6, 6, 2], "to": [10, 9, 11], "faces": {"north": {"texture": "#steel"}, "south": {"texture": "#steel"}, "east": {"texture": "#steel"}, "west": {"texture": "#steel"}, "up": {"texture": "#steel"}, "down": {"texture": "#steel"}}},
     {"name": "contact carrier", "from": [4, 4, 0], "to": [12, 12, 2], "faces": {"north": {"texture": "#contact_head", "uv": [0, 0, 8, 8]}, "south": {"texture": "#enclosure"}, "east": {"texture": "#enclosure"}, "west": {"texture": "#enclosure"}, "up": {"texture": "#enclosure"}, "down": {"texture": "#enclosure"}}},
-    {"name": "left cable run", "from": [6, 9, 2], "to": [7, 10, 11], "faces": {"north": {"texture": "#left_cable"}, "south": {"texture": "#left_cable"}, "east": {"texture": "#left_cable"}, "west": {"texture": "#left_cable"}, "up": {"texture": "#left_cable"}}},
-    {"name": "right cable run", "from": [9, 9, 2], "to": [10, 10, 11], "faces": {"north": {"texture": "#right_cable"}, "south": {"texture": "#right_cable"}, "east": {"texture": "#right_cable"}, "west": {"texture": "#right_cable"}, "up": {"texture": "#right_cable"}}},
+    {"name": "left cable run", "from": [6, 9, 2], "to": [7, 10, 11], "faces": {"north": {"texture": "#copper_wire", "uv": [1, 0, 2, 1]}, "south": {"texture": "#copper_wire", "uv": [1, 0, 2, 1]}, "east": {"texture": "#copper_wire", "uv": [1, 0, 10, 1]}, "west": {"texture": "#copper_wire", "uv": [1, 0, 10, 1]}, "up": {"texture": "#copper_wire", "uv": [0, 0, 1, 9]}}},
+    {"name": "right cable run", "from": [9, 9, 2], "to": [10, 10, 11], "faces": {"north": {"texture": "#copper_wire", "uv": [1, 0, 2, 1]}, "south": {"texture": "#copper_wire", "uv": [1, 0, 2, 1]}, "east": {"texture": "#copper_wire", "uv": [1, 0, 10, 1]}, "west": {"texture": "#copper_wire", "uv": [1, 0, 10, 1]}, "up": {"texture": "#copper_wire", "uv": [0, 0, 1, 9]}}},
     {"name": "cable keeper", "from": [5, 8, 3], "to": [11, 11, 4], "faces": {"north": {"texture": "#insulator"}, "south": {"texture": "#insulator"}, "east": {"texture": "#insulator"}, "west": {"texture": "#insulator"}, "up": {"texture": "#insulator"}, "down": {"texture": "#insulator"}}}
   ]
 }

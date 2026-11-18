@@ -1,7 +1,6 @@
 package org.cha0scollective.powerdock;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import dev.ryanhcode.sable.Sable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -23,8 +22,6 @@ import net.neoforged.neoforge.client.model.data.ModelData;
 public final class PowerDockRenderer implements BlockEntityRenderer<PowerDockBlockEntity> {
     private static final ModelResourceLocation ARM = ModelResourceLocation.standalone(
             ResourceLocation.fromNamespaceAndPath(PowerDock.ID, "block/power_dock_arm"));
-    private static final ModelResourceLocation SHIP_ARM = ModelResourceLocation.standalone(
-            ResourceLocation.fromNamespaceAndPath(PowerDock.ID, "block/power_dock_ship_arm"));
     // A small visual overlap hides the seam when the physics joint settles.
     private static final double RENDER_TRAVEL = PowerDockBlockEntity.ARM_TRAVEL + 1.0 / 128;
     private final ModelBlockRenderer modelRenderer;
@@ -41,7 +38,6 @@ public final class PowerDockRenderer implements BlockEntityRenderer<PowerDockBlo
     @SubscribeEvent
     public static void registerModel(ModelEvent.RegisterAdditional event) {
         event.register(ARM);
-        event.register(SHIP_ARM);
     }
 
     @Override
@@ -51,9 +47,7 @@ public final class PowerDockRenderer implements BlockEntityRenderer<PowerDockBlo
         pose.translate(0.5, 0.5, 0.5);
         pose.mulPose(PowerDockBlock.modelRotation(dock.facing()));
         pose.translate(-0.5, -0.5, -0.5 - dock.armProgress(partialTick) * RENDER_TRAVEL);
-        // Viewed from the mating face, the two halves need opposite cable layouts.
-        var arm = dock.hasLevel() && Sable.HELPER.isInPlotGrid(dock) ? SHIP_ARM : ARM;
-        var model = Minecraft.getInstance().getModelManager().getModel(arm);
+        var model = Minecraft.getInstance().getModelManager().getModel(ARM);
         modelRenderer.renderModel(pose.last(), buffers.getBuffer(Sheets.solidBlockSheet()), dock.getBlockState(),
                 model, 1, 1, 1, light, overlay, ModelData.EMPTY, RenderType.solid());
         pose.popPose();
