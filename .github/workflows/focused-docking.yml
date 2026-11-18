@@ -1,0 +1,55 @@
+name: Focused docking checks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docking:
+    name: Sable ${{ matrix.sable }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        sable: ['2.0.5', '2.0.6']
+    env:
+      SABLE_VERSION: ${{ matrix.sable }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Run focused docking and interruption tests
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build/ci-logs
+          bash gradlew --no-daemon --console=plain "-PsableVersion=$SABLE_VERSION" runGameTestServer 2>&1 | tee build/ci-logs/base.log
+          grep -Fq "Sable $SABLE_VERSION (sable)" build/ci-logs/base.log
+          grep -Fq 'All 6 required tests passed' build/ci-logs/base.log
+      - name: Run the wired-network unload test
+        shell: bash
+        run: |
+          set -o pipefail
+          bash gradlew --no-daemon --console=plain "-PsableVersion=$SABLE_VERSION" -PwithComputerCraft=true runGameTestServer 2>&1 | tee build/ci-logs/computercraft.log
+          grep -Fq "Sable $SABLE_VERSION (sable)" build/ci-logs/computercraft.log
+          grep -Fq 'CC: Tweaked 1.120.2 (computercraft)' build/ci-logs/computercraft.log
+          grep -Fq 'All 1 required tests passed' build/ci-logs/computercraft.log
+      - name: Verify clean and abrupt restarts
+        run: python3 tools/test_dock_restart.py --sable "$SABLE_VERSION"
+      - name: Retain docking logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: power-dock-sable-${{ matrix.sable }}-logs
+          path: |
+            build/ci-logs/*.log
+            build/power-dock-test-*/logs/latest.log
+            build/dock-restart/*/*.log

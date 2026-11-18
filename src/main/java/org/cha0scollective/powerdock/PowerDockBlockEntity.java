@@ -7,6 +7,8 @@ import dev.ryanhcode.sable.companion.math.BoundingBox3d;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
@@ -23,8 +25,11 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
     static final int DEPLOY_TICKS = 6;
     private DockingSession docking;
     private long nextCaptureTick;
+    private long retractionEndTick;
     private int extension;
     private int previousExtension;
+    private Control control = Control.REDSTONE;
+    @Nullable private DockComputer computer;
 
     PowerDockBlockEntity(BlockPos pos, BlockState state) {
         super(PowerDock.DOCK_ENTITY.get(), pos, state);
@@ -33,18 +38,27 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
 
     @Override
     public void buildCircuit(CircuitBuilder builder) {
-        builder.setTerminalCount(PowerDockBlock.TERMINAL_COUNT);
+        builder.setTerminalCount(contactCount());
     }
 
     @Override
     public void tick() {
         super.tick();
         if (!(level instanceof ServerLevel server)) {
+            if (!drawsMovingArm()) {
+                previousExtension = extension = 0;
+                return;
+            }
             previousExtension = extension;
             extension = Mth.clamp(extension + (getBlockState().getValue(PowerDockBlock.DEPLOYED) ? 1 : -1),
                     0, DEPLOY_TICKS);
             return;
         }
+
+        if (getBlockState().getValue(PowerDockBlock.RETRACTING) && server.getGameTime() >= retractionEndTick) {
+            showDockState(false, false);
+        }
+        if (PowerDock.computerCraft && isPinDock() && live()) computer(server).tick();
 
         DockingSession active = docking;
         if (active != null) {
@@ -93,7 +107,8 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
         boolean searchFromTarget = joint == null || joint.targets(targetBody);
         DockCandidate closest = null;
         for (var actor : body.getPlot().getBlockEntityActors()) {
-            if (!(actor instanceof PowerDockBlockEntity other) || other.docking != null || !other.ready(server)) continue;
+            if (!(actor instanceof PowerDockBlockEntity other) || other.docking != null
+                    || !getBlockState().is(other.getBlockState().getBlock()) || !other.ready(server)) continue;
             var ports = searchFromTarget ? new DockingSession.Ports(this, targetBody, other, body)
                     : new DockingSession.Ports(other, body, this, Objects.requireNonNull(targetBody));
             double distance = joint == null ? DockingJoint.captureDistance(server, ports) : joint.matchDistance(ports);
@@ -117,12 +132,61 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
     }
 
     boolean ready(ServerLevel server) {
-        return live() && level == server && !getElectricBehaviour().isPaused() && server.hasNeighborSignal(worldPosition);
+        return live() && level == server && !getElectricBehaviour().isPaused() && armed(server);
     }
 
-    private boolean live() {
-        return !isRemoved() && !isChunkUnloaded() && getBlockState().is(PowerDock.DOCK.get());
+    boolean live() {
+        return !isRemoved() && !isChunkUnloaded() && getBlockState().getBlock() instanceof PowerDockBlock;
     }
+
+    boolean isPinDock() {
+        return getBlockState().is(PowerDock.PIN_DOCK.get());
+    }
+
+    int contactCount() {
+        return ((PowerDockBlock) getBlockState().getBlock()).terminalCount();
+    }
+
+    DockComputer computer(ServerLevel server) {
+        if (computer == null) computer = ComputerCraftIntegration.create(this, server);
+        return computer;
+    }
+
+    boolean armed(Level level) {
+        if (!PowerDock.computerCraft || control == Control.REDSTONE) return level.hasNeighborSignal(worldPosition);
+        return control == Control.ARMED;
+    }
+
+    boolean aligning() {
+        return docking != null && !docking.conducting();
+    }
+
+    void setControl(Control next) {
+        if (control == next || level == null) return;
+        control = next;
+        setChanged();
+        releaseIfDisabled(level);
+    }
+
+    @Override
+    protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.write(tag, registries, clientPacket);
+        if (!clientPacket && control != Control.REDSTONE) tag.putByte("DockControl", (byte) control.ordinal());
+    }
+
+    @Override
+    protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        super.read(tag, registries, clientPacket);
+        if (!clientPacket) {
+            control = switch (tag.getByte("DockControl")) {
+                case 1 -> Control.ARMED;
+                case 2 -> Control.DISARMED;
+                default -> Control.REDSTONE;
+            };
+        }
+    }
+
+    enum Control { REDSTONE, ARMED, DISARMED }
 
     Direction facing() {
         return getBlockState().getValue(PowerDockBlock.FACING);
@@ -144,10 +208,21 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
         return phase * phase * (3 - 2 * phase);
     }
 
+    boolean drawsMovingArm() {
+        BlockState state = getBlockState();
+        return state.getValue(PowerDockBlock.DEPLOYED) || state.getValue(PowerDockBlock.RETRACTING);
+    }
+
     void showDockState(boolean deployed, boolean connected) {
         BlockState state = getBlockState();
         if (!live()) return;
+        long now = level.getGameTime();
+        if (!deployed && state.getValue(PowerDockBlock.DEPLOYED)) {
+            // Keep the moving model through the last interpolated client tick.
+            retractionEndTick = now + DEPLOY_TICKS + 1;
+        }
         BlockState next = state.setValue(PowerDockBlock.DEPLOYED, deployed)
+                .setValue(PowerDockBlock.RETRACTING, !deployed && now < retractionEndTick)
                 .setValue(PowerDockBlock.CONNECTED, connected);
         if (state == next) return;
         level.setBlock(worldPosition, next, Block.UPDATE_CLIENTS);
@@ -164,18 +239,20 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
     }
 
     void releaseIfDisabled(Level level) {
-        if (docking != null && !level.hasNeighborSignal(worldPosition)) docking.release();
+        if (docking != null && !armed(level)) docking.release();
     }
 
     @Override
     public void onChunkUnloaded() {
         super.onChunkUnloaded();
         if (docking != null) docking.release();
+        if (computer != null) computer.remove();
     }
 
     @Override
     public void remove() {
         if (docking != null) docking.release();
+        if (computer != null) computer.remove();
         super.remove();
     }
 }

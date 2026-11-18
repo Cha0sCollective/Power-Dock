@@ -40,3 +40,10 @@ type="required"
 versionRange="[${minimumSableVersion},2.1)"
 ordering="AFTER"
 side="BOTH"
+
+[[dependencies.powerdock]]
+modId="computercraft"
+type="optional"
+versionRange="[1.120.2,)"
+ordering="AFTER"
+side="BOTH"

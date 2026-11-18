@@ -1,0 +1,6 @@
+{
+  "parent": "powerdock:block/pin_dock",
+  "textures": {
+    "indicator": "powerdock:block/indicator_on"
+  }
+}

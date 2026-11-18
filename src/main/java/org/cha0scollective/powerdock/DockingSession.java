@@ -31,7 +31,9 @@ final class DockingSession {
     private final Quaterniond approachFrame;
     private final Quaterniond targetFrame;
     private final long alignmentDeadline;
-    private final ElectricWire[] contacts = new ElectricWire[PowerDockBlock.TERMINAL_COUNT];
+    private final ElectricWire[] contacts;
+    @Nullable private DockComputer targetComputer;
+    @Nullable private DockComputer approachingComputer;
     private long deployTick = Long.MAX_VALUE;
     private boolean conducting;
     private boolean released;
@@ -40,6 +42,7 @@ final class DockingSession {
         this.level = level;
         this.ports = ports;
         this.joint = joint;
+        this.contacts = new ElectricWire[ports.targetDock.contactCount()];
         this.targetFacing = ports.targetDock.facing();
         this.approachingFacing = ports.approachingDock.facing();
         this.approachAnchor = ports.approachAnchor();
@@ -93,6 +96,11 @@ final class DockingSession {
             if (contacts[pin] == null) return false;
         }
         conducting = true;
+        if (PowerDock.computerCraft && ports.targetDock.isPinDock()) {
+            targetComputer = ports.targetDock.computer(level);
+            approachingComputer = ports.approachingDock.computer(level);
+            targetComputer.connect(approachingComputer);
+        }
         ports.targetDock.showDockState(true, true);
         if (!released) ports.approachingDock.showDockState(true, true);
         return !released;
@@ -104,6 +112,8 @@ final class DockingSession {
         conducting = false;
         ports.targetDock.clearDocking(this);
         ports.approachingDock.clearDocking(this);
+
+        if (targetComputer != null && approachingComputer != null) targetComputer.disconnect(approachingComputer);
 
         for (int pin = 0; pin < contacts.length; pin++) {
             var contact = contacts[pin];

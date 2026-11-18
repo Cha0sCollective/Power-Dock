@@ -32,9 +32,11 @@ public final class PowerDockBlock extends ElectricBlock implements IBE<PowerDock
     static final DirectionProperty FACING = BlockStateProperties.FACING;
     static final BooleanProperty CONNECTED = BooleanProperty.create("connected");
     static final BooleanProperty DEPLOYED = BooleanProperty.create("deployed");
-    static final int TERMINAL_COUNT = 2;
+    static final BooleanProperty RETRACTING = BooleanProperty.create("retracting");
+    static final int PIN_COUNT = 8;
+    static final int COMMON_PIN = 9;
 
-    private static final RotatedTerminalCollection TERMINALS =
+    private static final RotatedTerminalCollection POWER_TERMINALS =
             RotatedTerminalCollection.builder(RotatedTerminalCollection::rotateNorthToFacing)
                     .with(Direction.values())
                     .add(new TerminalBoundingBox(IDecoratedTerminal.POSITIVE,
@@ -42,26 +44,56 @@ public final class PowerDockBlock extends ElectricBlock implements IBE<PowerDock
                          new TerminalBoundingBox(IDecoratedTerminal.NEGATIVE,
                             9, 14, 9, 12, 16, 13).withColor(IDecoratedTerminal.BLUE))
                     .build();
+    private static final RotatedTerminalCollection PIN_TERMINALS = pinTerminals();
     private static final RotatedTerminalCollection HOUSING =
             RotatedTerminalCollection.builder(RotatedTerminalCollection::rotateNorthToFacing)
                     .with(Direction.values())
                     .add(new TerminalBoundingBox(Component.empty(), 2, 3, 4, 14, 14, 14),
                          new TerminalBoundingBox(Component.empty(), 3, 3, 2, 13, 13, 4),
                          new TerminalBoundingBox(Component.empty(), 2, 2, 14, 14, 14, 16),
-                         new TerminalBoundingBox(Component.empty(), 4, 4, 0, 12, 12, 2))
+                         new TerminalBoundingBox(Component.empty(), 4, 4, 0, 12, 12, 2),
+                         new TerminalBoundingBox(Component.empty(), 1, 3, 0, 15, 13, 2))
                     .build();
     private final Map<BlockState, VoxelShape> shapes;
+    private final boolean pinDock;
 
-    PowerDockBlock(Properties properties) {
+    PowerDockBlock(Properties properties, boolean pinDock) {
         super(properties);
+        this.pinDock = pinDock;
         registerDefaultState(defaultBlockState().setValue(FACING, Direction.NORTH)
-                .setValue(CONNECTED, false).setValue(DEPLOYED, false));
+                .setValue(CONNECTED, false).setValue(DEPLOYED, false).setValue(RETRACTING, false));
         shapes = getShapeForEachState(state -> {
             Direction facing = state.getValue(FACING);
-            return Shapes.or(HOUSING.get(facing, 0).getShape(), HOUSING.get(facing, 1).getShape(),
-                    HOUSING.get(facing, 2).getShape(), HOUSING.get(facing, 3).getShape(),
-                    TERMINALS.get(facing, 0).getShape(), TERMINALS.get(facing, 1).getShape());
+            var shape = Shapes.or(HOUSING.get(facing, 0).getShape(), HOUSING.get(facing, 1).getShape(),
+                    HOUSING.get(facing, 2).getShape(), HOUSING.get(facing, pinDock ? 4 : 3).getShape());
+            for (int index = 0; index < terminalCount(); index++) {
+                shape = Shapes.or(shape, terminals().get(facing, index).getShape());
+            }
+            return shape;
         });
+    }
+
+    private static RotatedTerminalCollection pinTerminals() {
+        var builder = RotatedTerminalCollection.builder(RotatedTerminalCollection::rotateNorthToFacing)
+                .with(Direction.values());
+        // The Pinout controller uses native terminal 0 for common and terminals 1–8 for signals.
+        builder.add(new TerminalBoundingBox(IDecoratedTerminal.COMMON, 7, 14, 11, 9, 16, 13));
+        int[] columns = {2, 5, 9, 12};
+        for (int pin = 1; pin <= PIN_COUNT; pin++) {
+            int x = columns[(pin - 1) % columns.length];
+            int z = pin <= 4 ? 5 : 8;
+            builder.add(new TerminalBoundingBox(Component.translatable("terminal.powerdock.pin", pin),
+                    x, 14, z, x + 2, 16, z + 2));
+        }
+        return builder.build();
+    }
+
+    private RotatedTerminalCollection terminals() {
+        return pinDock ? PIN_TERMINALS : POWER_TERMINALS;
+    }
+
+    boolean isPinDock() {
+        return pinDock;
     }
 
     static Quaternionf modelRotation(Direction facing) {
@@ -78,7 +110,7 @@ public final class PowerDockBlock extends ElectricBlock implements IBE<PowerDock
 
     @Override
     protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
-        builder.add(FACING, CONNECTED, DEPLOYED);
+        builder.add(FACING, CONNECTED, DEPLOYED, RETRACTING);
     }
 
     @Override
@@ -103,12 +135,12 @@ public final class PowerDockBlock extends ElectricBlock implements IBE<PowerDock
 
     @Override
     public int terminalCount() {
-        return TERMINAL_COUNT;
+        return pinDock ? COMMON_PIN : 2;
     }
 
     @Override
     public ITerminalPlacement terminal(BlockState state, int index) {
-        return index >= 0 && index < TERMINAL_COUNT ? TERMINALS.get(state.getValue(FACING), index) : null;
+        return index >= 0 && index < terminalCount() ? terminals().get(state.getValue(FACING), index) : null;
     }
 
     @Override

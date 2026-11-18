@@ -1,4 +1,4 @@
 {
   "replace": false,
-  "values": ["powerdock:power_dock"]
+  "values": ["powerdock:power_dock", "powerdock:pin_dock"]
 }

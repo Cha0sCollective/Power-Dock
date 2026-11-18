@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
 import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -22,6 +23,8 @@ import net.neoforged.neoforge.client.model.data.ModelData;
 public final class PowerDockRenderer implements BlockEntityRenderer<PowerDockBlockEntity> {
     private static final ModelResourceLocation ARM = ModelResourceLocation.standalone(
             ResourceLocation.fromNamespaceAndPath(PowerDock.ID, "block/power_dock_arm"));
+    private static final ModelResourceLocation PIN_ARM = ModelResourceLocation.standalone(
+            ResourceLocation.fromNamespaceAndPath(PowerDock.ID, "block/pin_dock_arm"));
     // A small visual overlap hides the seam when the physics joint settles.
     private static final double RENDER_TRAVEL = PowerDockBlockEntity.ARM_TRAVEL + 1.0 / 128;
     private final ModelBlockRenderer modelRenderer;
@@ -38,16 +41,23 @@ public final class PowerDockRenderer implements BlockEntityRenderer<PowerDockBlo
     @SubscribeEvent
     public static void registerModel(ModelEvent.RegisterAdditional event) {
         event.register(ARM);
+        event.register(PIN_ARM);
+    }
+
+    @Override
+    public boolean shouldRender(PowerDockBlockEntity dock, Vec3 camera) {
+        return dock.drawsMovingArm() && BlockEntityRenderer.super.shouldRender(dock, camera);
     }
 
     @Override
     public void render(PowerDockBlockEntity dock, float partialTick, PoseStack pose,
                        MultiBufferSource buffers, int light, int overlay) {
+        if (!dock.drawsMovingArm()) return;
         pose.pushPose();
         pose.translate(0.5, 0.5, 0.5);
         pose.mulPose(PowerDockBlock.modelRotation(dock.facing()));
         pose.translate(-0.5, -0.5, -0.5 - dock.armProgress(partialTick) * RENDER_TRAVEL);
-        var model = Minecraft.getInstance().getModelManager().getModel(ARM);
+        var model = Minecraft.getInstance().getModelManager().getModel(dock.isPinDock() ? PIN_ARM : ARM);
         modelRenderer.renderModel(pose.last(), buffers.getBuffer(Sheets.solidBlockSheet()), dock.getBlockState(),
                 model, 1, 1, 1, light, overlay, ModelData.EMPTY, RenderType.solid());
         pose.popPose();

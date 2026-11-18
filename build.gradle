@@ -9,12 +9,32 @@ base { archivesName = 'power-dock' }
 java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
 def minimumSableVersion = '2.0.5'
 def sableVersion = providers.gradleProperty('sableVersion').orElse('2.0.6').get()
-def dockingTestRun = layout.buildDirectory.dir("power-dock-test-${sableVersion}")
+def computerCraftVersion = '1.120.2'
+def withComputerCraft = providers.gradleProperty('withComputerCraft').map { it.toBoolean() }.getOrElse(false)
+def lifecyclePhase = providers.gradleProperty('dockLifecyclePhase').getOrNull()
+def lifecycleRun = providers.gradleProperty('dockLifecycleRun').getOrNull()
+if (lifecyclePhase != null && (!(lifecyclePhase in ['save-clean', 'save-abrupt', 'restore']) ||
+        lifecycleRun == null || !(lifecycleRun ==~ /[a-z0-9_-]+/))) {
+    throw new GradleException('Run the dock restart fixture through tools/test_dock_restart.py.')
+}
+def dockingTestRun = layout.buildDirectory.dir(lifecyclePhase != null ? "dock-restart/${lifecycleRun}" :
+        "power-dock-test-${sableVersion}${withComputerCraft ? '-cc' : ''}")
+def dockingTestLane = lifecyclePhase != null ? 'lifecycle' : withComputerCraft ? 'computercraft' : 'base'
 
 sourceSets {
     gameTest {
+        java.destinationDirectory.set(layout.buildDirectory.dir("classes/java/gameTest-${dockingTestLane}"))
+        output.resourcesDir = layout.buildDirectory.dir("resources/gameTest-${dockingTestLane}").get().asFile
         compileClasspath += sourceSets.main.compileClasspath + sourceSets.main.output
         runtimeClasspath += sourceSets.main.runtimeClasspath
+        if (withComputerCraft) {
+            java.srcDir 'src/ccGameTest/java'
+            resources.srcDir 'src/ccGameTest/resources'
+        }
+        if (lifecyclePhase != null) {
+            java.srcDir 'src/lifecycleGameTest/java'
+            resources.srcDir 'src/lifecycleGameTest/resources'
+        }
     }
 }
 
@@ -23,6 +43,10 @@ repositories {
     maven { url = 'https://maven.createmod.net' }
     maven { url = 'https://mvn.devos.one/snapshots' }
     maven { url = 'https://maven.architectury.dev' }
+    maven {
+        url = 'https://maven.squiddev.cc'
+        content { includeGroup 'cc.tweaked' }
+    }
     exclusiveContent {
         forRepository { maven { url = 'https://maven.ryanhcode.dev/releases' } }
         filter { includeGroup 'dev.ryanhcode.sable'; includeGroup 'dev.ryanhcode.sable-companion' }
@@ -45,7 +69,13 @@ neoForge {
             loadedMods = [mods.powerdock, mods.powerdock_tests]
             gameDirectory = dockingTestRun
             programArguments.addAll('--world', 'fixture-world')
-            systemProperty 'neoforge.enabledGameTestNamespaces', 'powerdock_tests'
+            if (lifecyclePhase != null) {
+                systemProperty 'neoforge.enabledGameTestNamespaces', 'powerdock_lifecycle_tests'
+                systemProperty 'powerdock.test.lifecyclePhase', lifecyclePhase
+            } else {
+                systemProperty 'neoforge.enabledGameTestNamespaces',
+                        withComputerCraft ? 'powerdock_cc_tests' : 'powerdock_tests'
+            }
         }
     }
 }
@@ -54,7 +84,9 @@ neoForge {
 def resetDockingFixture = tasks.register('resetDockingFixture', Delete) {
     delete dockingTestRun.map { it.dir('fixture-world') }
 }
-tasks.named('runGameTestServer') { dependsOn resetDockingFixture }
+if (lifecyclePhase == null) {
+    tasks.named('runGameTestServer') { dependsOn resetDockingFixture }
+}
 
 dependencies {
     implementation('com.simibubi.create:create-1.21.1:6.0.10-280') { transitive = false }
@@ -66,6 +98,13 @@ dependencies {
     runtimeOnly("dev.ryanhcode.sable:sable-neoforge-1.21.1:${sableVersion}") { transitive = false }
     compileOnly('dev.ryanhcode.sable-companion:sable-companion-common-1.21.1:1.6.0') { transitive = false }
     runtimeOnly 'dev.architectury:architectury-neoforge:13.0.8'
+    compileOnly("cc.tweaked:cc-tweaked-1.21.1-core-api:${computerCraftVersion}") { transitive = false }
+    compileOnly("cc.tweaked:cc-tweaked-1.21.1-forge-api:${computerCraftVersion}") { transitive = false }
+    if (withComputerCraft) {
+        def computerCraft = "cc.tweaked:cc-tweaked-1.21.1-forge:${computerCraftVersion}"
+        gameTestCompileOnly(computerCraft) { transitive = false }
+        runtimeOnly(computerCraft) { transitive = false }
+    }
 }
 
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }

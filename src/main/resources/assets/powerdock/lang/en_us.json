@@ -1,3 +1,5 @@
 {
-  "block.powerdock.power_dock": "Power Dock"
+  "block.powerdock.power_dock": "Power Dock",
+  "block.powerdock.pin_dock": "Pin Dock",
+  "terminal.powerdock.pin": "Pin %s"
 }

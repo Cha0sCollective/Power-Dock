@@ -1,0 +1,76 @@
+{
+  "multipart": [
+    {
+      "when": {"connected": "false", "facing": "north"},
+      "apply": {"model": "powerdock:block/pin_dock"}
+    },
+    {
+      "when": {"connected": "false", "facing": "east"},
+      "apply": {"model": "powerdock:block/pin_dock", "y": 90}
+    },
+    {
+      "when": {"connected": "false", "facing": "south"},
+      "apply": {"model": "powerdock:block/pin_dock", "y": 180}
+    },
+    {
+      "when": {"connected": "false", "facing": "west"},
+      "apply": {"model": "powerdock:block/pin_dock", "y": 270}
+    },
+    {
+      "when": {"connected": "false", "facing": "up"},
+      "apply": {"model": "powerdock:block/pin_dock", "x": 270}
+    },
+    {
+      "when": {"connected": "false", "facing": "down"},
+      "apply": {"model": "powerdock:block/pin_dock", "x": 90}
+    },
+    {
+      "when": {"connected": "true", "facing": "north"},
+      "apply": {"model": "powerdock:block/pin_dock_connected"}
+    },
+    {
+      "when": {"connected": "true", "facing": "east"},
+      "apply": {"model": "powerdock:block/pin_dock_connected", "y": 90}
+    },
+    {
+      "when": {"connected": "true", "facing": "south"},
+      "apply": {"model": "powerdock:block/pin_dock_connected", "y": 180}
+    },
+    {
+      "when": {"connected": "true", "facing": "west"},
+      "apply": {"model": "powerdock:block/pin_dock_connected", "y": 270}
+    },
+    {
+      "when": {"connected": "true", "facing": "up"},
+      "apply": {"model": "powerdock:block/pin_dock_connected", "x": 270}
+    },
+    {
+      "when": {"connected": "true", "facing": "down"},
+      "apply": {"model": "powerdock:block/pin_dock_connected", "x": 90}
+    },
+    {
+      "when": {"facing": "north", "deployed": "false", "retracting": "false"},
+      "apply": {"model": "powerdock:block/pin_dock_arm"}
+    },
+    {
+      "when": {"facing": "east", "deployed": "false", "retracting": "false"},
+      "apply": {"model": "powerdock:block/pin_dock_arm", "y": 90}
+    },
+    {
+      "when": {"facing": "south", "deployed": "false", "retracting": "false"},
+      "apply": {"model": "powerdock:block/pin_dock_arm", "y": 180}
+    },
+    {
+      "when": {"facing": "west", "deployed": "false", "retracting": "false"},
+      "apply": {"model": "powerdock:block/pin_dock_arm", "y": 270}
+    },
+    {
+      "when": {"facing": "up", "deployed": "false", "retracting": "false"},
+      "apply": {"model": "powerdock:block/pin_dock_arm", "x": 270}
+    },
+    {
+      "when": {"facing": "down", "deployed": "false", "retracting": "false"},
+      "apply": {"model": "powerdock:block/pin_dock_arm", "x": 90}
+    }
+  ]
+}
