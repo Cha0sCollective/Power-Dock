@@ -12,7 +12,7 @@ Minecraft 1.21.1 with NeoForge 21.1.231 or newer, Create 6.0.10, Power Grid 0.6.
 
 Make two Power Docks in a 3×4 Create Mechanical Crafter. This is the Docking Connector recipe with Power Grid Insulated Copper Wire in the two chute slots.
 
-<img width="1712" height="1100" alt="image" src="https://github.com/user-attachments/assets/6a217408-53b6-418a-b114-86474de277fc" />
+<img width="856" height="550" alt="image" src="https://github.com/user-attachments/assets/6a217408-53b6-418a-b114-86474de277fc" />
 
 Use Crafter Slot Covers for the two blank slots in a full grid, everything folds into center then out the bottom
 
