@@ -1,6 +1,6 @@
 # Power Dock
 
-Power Dock lets a Sable ship plug into a station's Power Grid circuit. The docks pull the ship into place, extend their arms, and connect the two circuits. Power can flow in either direction.
+Power Dock connects Power Grid circuits between a Sable ship and a fixed station or between two Sable ships. The docks pull together, extend their arms, and transfer power in either direction.
 
 [Download Power Dock](https://github.com/Cha0sCollective/Power-Dock/releases/latest)
 
@@ -18,9 +18,11 @@ Use Crafter Slot Covers for the two blank slots in a full grid, everything folds
 
 ## Docking
 
-1. Point one dock on the ship at the other on the station. Hold a Power Grid wire and aim at a copper post to see **Positive** or **Negative**. Wire both posts into the local circuit on each side.
-2. Power both docks with redstone and bring the ship in slowly. The arms extend when the faces are less than one block apart. The amber lamps light and the comparators output 15 when the circuit closes.
-3. Cut redstone to either dock to disconnect power, retract the arms, and release the ship.
+1. Mount the docks on separate Sable ships, or mount one on a ship and one on a fixed station. Point them at each other and wire both posts into the local circuit on each side. Hold a Power Grid wire and aim at a copper post to see **Positive** or **Negative**.
+2. Power both docks with redstone and bring them together slowly. When docking two ships, match their speed before closing the gap. The arms extend when the faces are less than one block apart. The amber lamps light and the comparators output 15 when the circuit closes.
+3. Cut redstone to either dock in a pair to disconnect its power and retract its arms. The craft separates when its last dock pair is released.
+
+A carrier can hold several Sable craft at once. Give each plane or supply pod its own dock and control the matching carrier dock with a separate redstone switch. For a craft with multiple dock pairs, match the spacing and orientation on both hulls so all the heads meet when the hulls line up.
 
 ## Building
 

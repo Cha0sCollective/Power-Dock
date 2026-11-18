@@ -15,6 +15,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Vector3d;
 import org.patryk3211.powergrid.electricity.base.ElectricBlockEntity;
 
+import javax.annotation.Nullable;
+import java.util.Objects;
+
 public final class PowerDockBlockEntity extends ElectricBlockEntity implements BlockEntitySubLevelActor {
     static final double ARM_TRAVEL = 11.0 / 32;
     static final int DEPLOY_TICKS = 6;
@@ -45,51 +48,72 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
 
         DockingSession active = docking;
         if (active != null) {
-            if (active.station() == this && !active.update()) active.release();
+            if (active.targetDock() == this && !active.update()) active.release();
             return;
         }
 
         showDockState(false, false);
-        // Only the stationary half searches and owns the pair. Plot coordinates never enter the search.
-        if (Sable.HELPER.isInPlotGrid(server, worldPosition) || server.getGameTime() < nextCaptureTick
-                || !ready(server)) return;
+        if (server.getGameTime() < nextCaptureTick || !ready(server)) return;
         nextCaptureTick = server.getGameTime() + 4;
 
-        var front = worldPosition.getCenter().relative(facing(), 0.5);
-        var nearby = new BoundingBox3d(front, front).expand(DockingSession.CAPTURE_RANGE + 0.75);
-        DockingSession.Capture closest = null;
+        var targetBody = (ServerSubLevel) Sable.HELPER.getContaining(this);
+        var front = anchor(0.5);
+        if (targetBody != null) {
+            if (targetBody.isRemoved()) return;
+            targetBody.logicalPose().transformPosition(front);
+        } else if (Sable.HELPER.isInPlotGrid(server, worldPosition)) {
+            return;
+        }
+
+        var nearby = new BoundingBox3d(front.x, front.y, front.z, front.x, front.y, front.z)
+                .expand(DockingJoint.CAPTURE_RANGE + 0.75);
+        DockCandidate closest = null;
         for (var candidate : Sable.HELPER.getAllIntersecting(server, nearby)) {
-            if (!(candidate instanceof ServerSubLevel body) || body.isRemoved()) continue;
-            var capture = findCapture(server, body);
+            if (!(candidate instanceof ServerSubLevel body) || body == targetBody || body.isRemoved()) continue;
+            var capture = findCapture(server, targetBody, body);
             if (capture != null && (closest == null || capture.distanceSquared() < closest.distanceSquared())) {
                 closest = capture;
             }
         }
         if (closest != null) {
-            DockingSession session = closest.start(server, this);
-            docking = session;
-            closest.ship().docking = session;
+            var ports = closest.ports();
+            var joint = closest.joint() != null ? closest.joint() : DockingJoint.start(server, ports);
+            if (joint != null) {
+                var session = new DockingSession(server, ports, joint);
+                ports.targetDock().docking = session;
+                ports.approachingDock().docking = session;
+            }
         }
     }
 
-    private DockingSession.Capture findCapture(ServerLevel server, ServerSubLevel body) {
-        DockingSession.Capture closest = null;
+    @Nullable
+    private DockCandidate findCapture(ServerLevel server, @Nullable ServerSubLevel targetBody, ServerSubLevel body) {
+        var joint = DockingJoint.between(targetBody, body);
+        if (joint != null && !joint.isValid()) return null;
+        boolean searchFromTarget = joint == null || joint.targets(targetBody);
+        DockCandidate closest = null;
         for (var actor : body.getPlot().getBlockEntityActors()) {
-            if (!(actor instanceof PowerDockBlockEntity ship)) continue;
-            // Two rigid joints on one ship can fight each other.
-            if (ship.docking != null) return null;
-            if (!ship.ready(server)) continue;
-            var capture = DockingSession.findCapture(server, this, ship, body);
-            if (capture != null && (closest == null || capture.distanceSquared() < closest.distanceSquared())) {
-                closest = capture;
+            if (!(actor instanceof PowerDockBlockEntity other) || other.docking != null || !other.ready(server)) continue;
+            var ports = searchFromTarget ? new DockingSession.Ports(this, targetBody, other, body)
+                    : new DockingSession.Ports(other, body, this, Objects.requireNonNull(targetBody));
+            double distance = joint == null ? DockingJoint.captureDistance(server, ports) : joint.matchDistance(ports);
+            if (Double.isFinite(distance) && (closest == null || distance < closest.distanceSquared())) {
+                closest = new DockCandidate(ports, joint, distance);
             }
         }
+        if (closest != null && joint == null && !DockingJoint.canConnect(targetBody, body)) return null;
         return closest;
     }
 
+    private record DockCandidate(DockingSession.Ports ports, @Nullable DockingJoint joint, double distanceSquared) {}
+
     @Override
     public void sable$physicsTick(ServerSubLevel body, RigidBodyHandle handle, double timeStep) {
-        if (docking != null && docking.ship() == this) docking.advance(body, timeStep);
+        if (docking != null && docking.approachingDock() == this) docking.joint().advance(docking, body, timeStep);
+    }
+
+    @Nullable DockingJoint currentJoint() {
+        return docking == null ? null : docking.joint();
     }
 
     boolean ready(ServerLevel server) {
