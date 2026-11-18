@@ -16,6 +16,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import org.joml.Vector3d;
 import org.patryk3211.powergrid.electricity.GlobalElectricNetworks;
 import org.patryk3211.powergrid.electricity.sim.ElectricWire;
 import org.patryk3211.powergrid.electricity.sim.node.CurrentSourceWire;
@@ -33,6 +34,10 @@ import java.util.UUID;
 @GameTestHolder("powerdock_lifecycle_tests")
 @PrefixGameTestTemplate(false)
 public final class DockRestartGameTest {
+    private static final int AIRBORNE_START_Y = 304;
+    // The flat GameTest world has its floor below Y=0.
+    private static final int MIN_AIRBORNE_Y = 32;
+
     @GameTest(template = "empty", timeoutTicks = 120)
     public static void restoresDockInFreshProcess(GameTestHelper test) {
         var level = test.getLevel();
@@ -49,6 +54,7 @@ public final class DockRestartGameTest {
                     var load = measured[0];
                     test.assertTrue(load != null && Math.abs(load.potentialDifference()) > 10,
                             "The reconnected circuit did not deliver power");
+                    if (fixture.airborne()) assertFalling(test, fixture);
                     if (restoring) {
                         System.out.printf("POWER_DOCK_RESTART_RESTORED pairs=%d airborne=%s volts=%.2f%n",
                                 fixture.offsets().size(), fixture.airborne(), Math.abs(load.potentialDifference()));
@@ -56,11 +62,9 @@ public final class DockRestartGameTest {
                         fixture.save(record);
                         if (fixture.airborne()) {
                             var body = body(level, fixture.movingId());
-                            var velocity = SubLevelContainer.getContainer(level).physicsSystem().getPipeline()
-                                    .getLinearVelocity(body, new org.joml.Vector3d());
-                            test.assertTrue(velocity.y < -2, "The checkpoint must contain a moving, airborne hull");
                             level.getServer().saveEverything(true, true, true);
-                            System.out.println("POWER_DOCK_RESTART_ABRUPT_CHECKPOINT_SAVED");
+                            System.out.printf("POWER_DOCK_RESTART_ABRUPT_CHECKPOINT_SAVED altitude=%.2f%n",
+                                    body.logicalPose().position().y());
                             System.out.flush();
                             // The runner expects this exit code only after verifying the flushed fixture checkpoint.
                             Runtime.getRuntime().halt(86);
@@ -71,7 +75,7 @@ public final class DockRestartGameTest {
     }
 
     private static Fixture seed(ServerLevel level, boolean airborne) {
-        var first = airborne ? new BlockPos(36, 248, 4) : new BlockPos(3, -55, 4);
+        var first = airborne ? new BlockPos(36, AIRBORNE_START_Y, 4) : new BlockPos(3, -55, 4);
         var second = first.east(3);
         var offsets = airborne ? List.of(0, 3) : List.of(0);
         level.setChunkForced(first.getX() >> 4, first.getZ() >> 4, true);
@@ -118,8 +122,10 @@ public final class DockRestartGameTest {
         var first = carrier == null ? fixture.station() : carrier.getPlot().getCenterBlock();
         var second = moving.getPlot().getCenterBlock();
         if (fixture.airborne()) {
-            test.assertTrue(moving.logicalPose().position().y() > 160 && carrier.logicalPose().position().y() > 160,
-                    "The unsupported hulls left the flight test area");
+            double movingY = moving.logicalPose().position().y();
+            double carrierY = carrier.logicalPose().position().y();
+            test.assertTrue(movingY > MIN_AIRBORNE_Y && carrierY > MIN_AIRBORNE_Y,
+                    "The unsupported hulls left the flight test area at Y=" + movingY + " and Y=" + carrierY);
         }
         var grid = GlobalElectricNetworks.getWorldNetworks(level);
         for (int offset : fixture.offsets()) {
@@ -134,6 +140,18 @@ public final class DockRestartGameTest {
                 test.assertTrue(grid.globalGraph.getWires(left, right).size() == 1,
                         "Expected one live contact per terminal after seating, terminal " + pin);
             }
+        }
+    }
+
+    private static void assertFalling(GameTestHelper test, Fixture fixture) {
+        var level = test.getLevel();
+        var pipeline = SubLevelContainer.getContainer(level).physicsSystem().getPipeline();
+        for (var id : List.of(fixture.carrierId(), fixture.movingId())) {
+            var body = body(level, id);
+            double y = body.logicalPose().position().y();
+            double speed = pipeline.getLinearVelocity(body, new Vector3d()).y;
+            test.assertTrue(speed < -2, "The hull should still be falling at Y=" + y + " with vertical speed " + speed);
+            System.out.printf("POWER_DOCK_RESTART_AIRBORNE hull=%s altitude=%.2f verticalSpeed=%.2f%n", id, y, speed);
         }
     }
 
