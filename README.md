@@ -14,6 +14,9 @@ Make two Power Docks in a 3×4 Create Mechanical Crafter. This is the Docking Co
 
 <img width="428" height="275" alt="image" src="https://github.com/user-attachments/assets/6a217408-53b6-418a-b114-86474de277fc" />
 
+<img width="400" height="233" alt="image" src="https://github.com/user-attachments/assets/37c4de49-a86c-4d9b-b03a-2c235fb82a1e" />
+
+
 Use Crafter Slot Covers for the two blank slots in a full grid, everything folds into center then out the bottom
 
 ## Docking
