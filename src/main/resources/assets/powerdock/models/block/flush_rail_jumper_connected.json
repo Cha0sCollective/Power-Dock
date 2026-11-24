@@ -1,0 +1,4 @@
+{
+  "parent": "powerdock:block/flush_rail_jumper",
+  "textures": {"indicator": "powerdock:block/indicator_on"}
+}

@@ -1,5 +1,7 @@
 {
   "block.powerdock.power_dock": "Power Dock",
   "block.powerdock.pin_dock": "Pin Dock",
+  "block.powerdock.rail_jumper": "Deck Rail Jumper",
+  "block.powerdock.flush_rail_jumper": "Flush Rail Jumper",
   "terminal.powerdock.pin": "Pin %s"
 }

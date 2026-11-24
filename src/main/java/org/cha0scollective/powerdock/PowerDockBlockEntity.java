@@ -14,6 +14,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import org.joml.Quaternionf;
 import org.joml.Vector3d;
 import org.patryk3211.powergrid.electricity.base.ElectricBlockEntity;
 
@@ -30,6 +31,8 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
     private int previousExtension;
     private Control control = Control.REDSTONE;
     @Nullable private DockComputer computer;
+    @Nullable private BlockPos adaptivePartner;
+    @Nullable AdaptiveArmPose lastAdaptiveArm;
 
     PowerDockBlockEntity(BlockPos pos, BlockState state) {
         super(PowerDock.DOCK_ENTITY.get(), pos, state);
@@ -47,6 +50,7 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
         if (!(level instanceof ServerLevel server)) {
             if (!drawsMovingArm()) {
                 previousExtension = extension = 0;
+                lastAdaptiveArm = null;
                 return;
             }
             previousExtension = extension;
@@ -91,18 +95,22 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
         }
         if (closest != null) {
             var ports = closest.ports();
-            var joint = closest.joint() != null ? closest.joint() : DockingJoint.start(server, ports);
-            if (joint != null) {
+            var joint = closest.joint();
+            if (!closest.adaptive() && joint == null) joint = DockingJoint.start(server, ports);
+            if (closest.adaptive() || joint != null) {
                 var session = new DockingSession(server, ports, joint);
                 ports.targetDock().docking = session;
                 ports.approachingDock().docking = session;
+                session.start();
             }
         }
     }
 
     @Nullable
     private DockCandidate findCapture(ServerLevel server, @Nullable ServerSubLevel targetBody, ServerSubLevel body) {
-        var joint = DockingJoint.between(targetBody, body);
+        boolean adaptive = LoconauticsCompatibility.isRailCarriage(targetBody)
+                || LoconauticsCompatibility.isRailCarriage(body);
+        var joint = adaptive ? null : DockingJoint.between(targetBody, body);
         if (joint != null && !joint.isValid()) return null;
         boolean searchFromTarget = joint == null || joint.targets(targetBody);
         DockCandidate closest = null;
@@ -111,20 +119,24 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
                     || !getBlockState().is(other.getBlockState().getBlock()) || !other.ready(server)) continue;
             var ports = searchFromTarget ? new DockingSession.Ports(this, targetBody, other, body)
                     : new DockingSession.Ports(other, body, this, Objects.requireNonNull(targetBody));
-            double distance = joint == null ? DockingJoint.captureDistance(server, ports) : joint.matchDistance(ports);
+            double distance = adaptive ? AdaptiveDock.distance(server, ports, true)
+                    : joint == null ? DockingJoint.captureDistance(server, ports) : joint.matchDistance(ports);
             if (Double.isFinite(distance) && (closest == null || distance < closest.distanceSquared())) {
-                closest = new DockCandidate(ports, joint, distance);
+                closest = new DockCandidate(ports, joint, adaptive, distance);
             }
         }
-        if (closest != null && joint == null && !DockingJoint.canConnect(targetBody, body)) return null;
+        if (closest != null && !adaptive && joint == null && !DockingJoint.canConnect(targetBody, body)) return null;
         return closest;
     }
 
-    private record DockCandidate(DockingSession.Ports ports, @Nullable DockingJoint joint, double distanceSquared) {}
+    private record DockCandidate(DockingSession.Ports ports, @Nullable DockingJoint joint,
+                                 boolean adaptive, double distanceSquared) {}
 
     @Override
     public void sable$physicsTick(ServerSubLevel body, RigidBodyHandle handle, double timeStep) {
-        if (docking != null && docking.approachingDock() == this) docking.joint().advance(docking, body, timeStep);
+        if (docking == null || docking.approachingDock() != this) return;
+        var joint = docking.joint();
+        if (joint != null) joint.advance(docking, body, timeStep);
     }
 
     @Nullable DockingJoint currentJoint() {
@@ -172,12 +184,15 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
     protected void write(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.write(tag, registries, clientPacket);
         if (!clientPacket && control != Control.REDSTONE) tag.putByte("DockControl", (byte) control.ordinal());
+        if (clientPacket && adaptivePartner != null) tag.putLong("AdaptivePartner", adaptivePartner.asLong());
     }
 
     @Override
     protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
         super.read(tag, registries, clientPacket);
-        if (!clientPacket) {
+        if (clientPacket) {
+            adaptivePartner = tag.contains("AdaptivePartner") ? BlockPos.of(tag.getLong("AdaptivePartner")) : null;
+        } else {
             control = switch (tag.getByte("DockControl")) {
                 case 1 -> Control.ARMED;
                 case 2 -> Control.DISARMED;
@@ -187,6 +202,17 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
     }
 
     enum Control { REDSTONE, ARMED, DISARMED }
+
+    @Nullable BlockPos adaptivePartner() {
+        return adaptivePartner;
+    }
+
+    void setAdaptivePartner(@Nullable BlockPos partner) {
+        adaptivePartner = partner;
+        if (live()) sendData();
+    }
+
+    record AdaptiveArmPose(Vector3d offset, Quaternionf headRotation) {}
 
     Direction facing() {
         return getBlockState().getValue(PowerDockBlock.FACING);

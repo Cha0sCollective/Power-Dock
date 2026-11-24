@@ -23,7 +23,7 @@ final class DockingSession {
 
     private final ServerLevel level;
     private final Ports ports;
-    private final DockingJoint joint;
+    @Nullable private final DockingJoint joint;
     private final Direction targetFacing;
     private final Direction approachingFacing;
     private final Vector3d approachAnchor;
@@ -38,7 +38,7 @@ final class DockingSession {
     private boolean conducting;
     private boolean released;
 
-    DockingSession(ServerLevel level, Ports ports, DockingJoint joint) {
+    DockingSession(ServerLevel level, Ports ports, @Nullable DockingJoint joint) {
         this.level = level;
         this.ports = ports;
         this.joint = joint;
@@ -50,14 +50,33 @@ final class DockingSession {
         this.approachFrame = ports.approachFrame();
         this.targetFrame = ports.targetFrame();
         this.alignmentDeadline = level.getGameTime() + 50;
-        joint.attach(this);
+        if (joint != null) joint.attach(this);
+    }
+
+    void start() {
+        if (joint == null) {
+            deployTick = level.getGameTime();
+            ports.targetDock.setAdaptivePartner(ports.approachingDock.getBlockPos());
+            ports.approachingDock.setAdaptivePartner(ports.targetDock.getBlockPos());
+            ports.targetDock.showDockState(true, false);
+            if (!released) ports.approachingDock.showDockState(true, false);
+        }
     }
 
     boolean update() {
-        if (!joint.isValid() || !ports.targetDock.ready(level) || !ports.approachingDock.ready(level)
+        if (!ports.targetDock.ready(level) || !ports.approachingDock.ready(level)
                 || Sable.HELPER.getContaining(ports.targetDock) != ports.targetBody
                 || Sable.HELPER.getContaining(ports.approachingDock) != ports.approachingBody
                 || ports.targetDock.facing() != targetFacing || ports.approachingDock.facing() != approachingFacing) return false;
+
+        if (joint == null) {
+            if (!Double.isFinite(AdaptiveDock.distance(level, ports, !conducting))) return false;
+            if (conducting) return contactsIntact();
+            return level.getGameTime() < deployTick + PowerDockBlockEntity.DEPLOY_TICKS || closeContacts();
+        }
+        if (!joint.isValid() || (level.getGameTime() % 4 == 0
+                && (LoconauticsCompatibility.isRailCarriage(ports.targetBody)
+                || LoconauticsCompatibility.isRailCarriage(ports.approachingBody)))) return false;
 
         var approachPose = ports.approachingBody.logicalPose();
         double error = approachPose.transformPosition(approachAnchor, new Vector3d())
@@ -67,10 +86,7 @@ final class DockingSession {
 
         if (conducting) {
             if (!(error <= 0.25 * 0.25 && alignment >= DockingJoint.MIN_CAPTURE_ALIGNMENT)) return false;
-            for (var contact : contacts) {
-                if (contact.getNetwork() == null) return false;
-            }
-            return true;
+            return contactsIntact();
         }
         var approachFace = approachPose.transformPosition(ports.approachingDock.anchor(0.5));
         boolean inReach = approachFace.distanceSquared(inWorld(ports.targetBody, ports.targetDock.anchor(0.5))) < 1;
@@ -86,6 +102,13 @@ final class DockingSession {
             return closeContacts();
         }
         return level.getGameTime() < alignmentDeadline;
+    }
+
+    private boolean contactsIntact() {
+        for (var contact : contacts) {
+            if (contact.getNetwork() == null) return false;
+        }
+        return true;
     }
 
     private boolean closeContacts() {
@@ -123,9 +146,13 @@ final class DockingSession {
             if (owner != null) GlobalElectricNetworks.getWorldNetworks(level).scheduleIslandDiscovery(owner);
             contacts[pin] = null;
         }
-        joint.detach(this);
+        if (joint != null) joint.detach(this);
         ports.targetDock.showDockState(false, false);
         ports.approachingDock.showDockState(false, false);
+        if (joint == null) {
+            ports.targetDock.setAdaptivePartner(null);
+            ports.approachingDock.setAdaptivePartner(null);
+        }
     }
 
     PowerDockBlockEntity targetDock() {
@@ -136,7 +163,7 @@ final class DockingSession {
         return ports.approachingDock;
     }
 
-    DockingJoint joint() {
+    @Nullable DockingJoint joint() {
         return joint;
     }
 

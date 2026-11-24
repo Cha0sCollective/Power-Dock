@@ -13,6 +13,7 @@ import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
@@ -20,6 +21,7 @@ import org.patryk3211.powergrid.electricity.wire.BlockWireEndpoint;
 
 import javax.annotation.Nullable;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 final class ComputerCraftIntegration {
     private ComputerCraftIntegration() {}
@@ -33,72 +35,84 @@ final class ComputerCraftIntegration {
                 dock.live() && dock.getLevel() instanceof ServerLevel level ? (Peripheral) dock.computer(level) : null);
         event.registerBlockEntity(WiredElementCapability.get(), PowerDock.DOCK_ENTITY.get(), (dock, side) ->
                 dock.live() && dock.isPinDock() && side == dock.facing().getOpposite()
-                        && dock.getLevel() instanceof ServerLevel level ? (Peripheral) dock.computer(level) : null);
+                        && dock.getLevel() instanceof ServerLevel level ? ((Peripheral) dock.computer(level)).port : null);
+        event.registerBlockEntity(WiredElementCapability.get(), PowerDock.JUMPER_ENTITY.get(), (jumper, side) ->
+                jumper.live() && side == jumper.dataFace() && jumper.getLevel() instanceof ServerLevel level
+                        ? (WiredPort) jumper.computer(level) : null);
     }
 
     static DockComputer create(PowerDockBlockEntity dock, ServerLevel level) {
         return new Peripheral(dock, level);
     }
 
-    public static final class Peripheral implements IPeripheral, WiredElement, DockComputer {
-        private final PowerDockBlockEntity dock;
+    static DockComputer create(RailJumperBlockEntity jumper, ServerLevel level) {
+        return new WiredPort(jumper, level, jumper::dataFace);
+    }
+
+    private static final class WiredPort implements WiredElement, DockComputer {
+        private final BlockEntity host;
         private final ServerLevel level;
         private final String senderId;
-        @Nullable private final WiredNode node;
+        private final WiredNode node;
+        private final Supplier<Direction> connectorSide;
         private volatile Vec3 position;
-        @Nullable private WiredNode backConnection;
-        private Direction back;
+        @Nullable private WiredNode localConnection;
+        private Direction side;
 
-        Peripheral(PowerDockBlockEntity dock, ServerLevel level) {
-            this.dock = dock;
+        WiredPort(BlockEntity host, ServerLevel level, Supplier<Direction> connectorSide) {
+            this.host = host;
             this.level = level;
-            this.senderId = "powerdock:" + level.dimension().location() + "/" + dock.getBlockPos().asLong();
-            this.position = dock.getBlockPos().getCenter();
-            this.back = dock.facing().getOpposite();
-            this.node = dock.isPinDock() ? ComputerCraftAPI.createWiredNodeForElement(this) : null;
+            this.connectorSide = connectorSide;
+            this.senderId = "powerdock:" + level.dimension().location() + "/" + host.getBlockPos().asLong();
+            this.position = host.getBlockPos().getCenter();
+            this.side = connectorSide.get();
+            this.node = ComputerCraftAPI.createWiredNodeForElement(this);
         }
 
         @Override
         public void tick() {
-            if (node == null) return;
-            var body = (ServerSubLevel) Sable.HELPER.getContaining(dock);
-            var center = dock.getBlockPos().getCenter();
+            var body = (ServerSubLevel) Sable.HELPER.getContaining(host);
+            var center = host.getBlockPos().getCenter();
             // Wired messages can be sent off-thread. Publish a current world-space position on the server thread.
             position = body == null ? center : body.logicalPose().transformPosition(center);
-            if (back != dock.facing().getOpposite()) {
-                back = dock.facing().getOpposite();
-                level.invalidateCapabilities(dock.getBlockPos());
+            var currentSide = connectorSide.get();
+            if (side != currentSide) {
+                side = currentSide;
+                level.invalidateCapabilities(host.getBlockPos());
             }
-            var neighbor = dock.getBlockPos().relative(back);
-            var cable = level.hasChunkAt(neighbor) && Sable.HELPER.getContaining(level, neighbor) == body
-                    && !(level.getBlockState(neighbor).getBlock() instanceof PowerDockBlock)
-                    ? level.getCapability(WiredElementCapability.get(), neighbor, back.getOpposite()) : null;
+            var neighbor = host.getBlockPos().relative(side);
+            WiredElement cable = null;
+            if (level.hasChunkAt(neighbor) && Sable.HELPER.getContaining(level, neighbor) == body) {
+                var block = level.getBlockState(neighbor).getBlock();
+                if (!(block instanceof PowerDockBlock) && !(block instanceof RailJumperBlock)) {
+                    cable = level.getCapability(WiredElementCapability.get(), neighbor, side.getOpposite());
+                }
+            }
             var next = cable == null ? null : cable.getNode();
-            if (next == backConnection) return;
-            if (backConnection != null) node.disconnectFrom(backConnection);
-            backConnection = next;
+            if (next == localConnection) return;
+            if (localConnection != null) node.disconnectFrom(localConnection);
+            localConnection = next;
             if (next != null) node.connectTo(next);
         }
 
         @Override
         public void connect(DockComputer peer) {
-            if (node != null && peer instanceof Peripheral other && other.node != null) node.connectTo(other.node);
+            if (peer instanceof WiredPort other) node.connectTo(other.node);
         }
 
         @Override
         public void disconnect(DockComputer peer) {
-            if (node != null && peer instanceof Peripheral other && other.node != null) node.disconnectFrom(other.node);
+            if (peer instanceof WiredPort other) node.disconnectFrom(other.node);
         }
 
         @Override
         public void remove() {
-            if (node != null) node.remove();
-            backConnection = null;
+            node.remove();
+            localConnection = null;
         }
 
         @Override
         public WiredNode getNode() {
-            if (node == null) throw new IllegalStateException("A two-contact dock has no wired node");
             return node;
         }
 
@@ -115,6 +129,38 @@ final class ComputerCraftIntegration {
         @Override
         public String getSenderID() {
             return senderId;
+        }
+    }
+
+    public static final class Peripheral implements IPeripheral, DockComputer {
+        private final PowerDockBlockEntity dock;
+        private final ServerLevel level;
+        @Nullable private final WiredPort port;
+
+        Peripheral(PowerDockBlockEntity dock, ServerLevel level) {
+            this.dock = dock;
+            this.level = level;
+            this.port = dock.isPinDock() ? new WiredPort(dock, level, () -> dock.facing().getOpposite()) : null;
+        }
+
+        @Override
+        public void tick() {
+            if (port != null) port.tick();
+        }
+
+        @Override
+        public void connect(DockComputer peer) {
+            if (port != null && peer instanceof Peripheral other && other.port != null) port.connect(other.port);
+        }
+
+        @Override
+        public void disconnect(DockComputer peer) {
+            if (port != null && peer instanceof Peripheral other && other.port != null) port.disconnect(other.port);
+        }
+
+        @Override
+        public void remove() {
+            if (port != null) port.remove();
         }
 
         @Override

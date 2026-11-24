@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": ["SCS", " B "],
+  "key": {
+    "S": {"item": "powergrid:socket"},
+    "C": {"item": "powergrid:copper_cord"},
+    "B": {"item": "create:brass_sheet"}
+  },
+  "result": {"id": "powerdock:rail_jumper", "count": 2}
+}

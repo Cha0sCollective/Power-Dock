@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "redstone",
+  "ingredients": [{"item": "powerdock:rail_jumper"}, {"item": "create:iron_sheet"}],
+  "result": {"id": "powerdock:flush_rail_jumper", "count": 1}
+}

@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {"particle": "powerdock:block/enclosure", "enclosure": "powerdock:block/enclosure", "contact_head": "powerdock:block/contact_head"},
+  "elements": [
+    {"name": "contact carrier", "from": [4, 4, 0], "to": [12, 12, 2], "faces": {"north": {"texture": "#contact_head", "uv": [0, 0, 8, 8]}, "south": {"texture": "#enclosure"}, "east": {"texture": "#enclosure"}, "west": {"texture": "#enclosure"}, "up": {"texture": "#enclosure"}, "down": {"texture": "#enclosure"}}}
+  ]
+}

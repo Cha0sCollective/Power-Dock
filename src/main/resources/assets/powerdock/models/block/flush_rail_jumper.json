@@ -1,0 +1,17 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {"particle": "powerdock:block/enclosure", "enclosure": "powerdock:block/enclosure", "steel": "powerdock:block/steel", "insulator": "powerdock:block/insulator", "indicator": "powerdock:block/indicator_off", "data_port": "powerdock:block/jumper_data_port", "contacts": "powergrid:block/device_connector", "casing": "powergrid:block/conductive_casing"},
+  "elements": [
+    {"name": "wall box", "from": [0, 0, 2], "to": [16, 16, 14], "faces": {"north": {"texture": "#enclosure"}, "south": {"texture": "#enclosure"}, "east": {"texture": "#enclosure"}, "west": {"texture": "#enclosure"}, "up": {"texture": "#enclosure"}, "down": {"texture": "#enclosure"}}},
+    {"name": "exterior face", "from": [0, 0, 1], "to": [16, 16, 2], "faces": {"north": {"texture": "#casing"}, "east": {"texture": "#steel"}, "west": {"texture": "#steel"}, "up": {"texture": "#steel"}, "down": {"texture": "#steel"}}},
+    {"name": "cable strain relief", "from": [5, 3, 0], "to": [11, 9, 1], "faces": {"north": {"texture": "#insulator"}, "east": {"texture": "#steel"}, "west": {"texture": "#steel"}, "up": {"texture": "#steel"}, "down": {"texture": "#steel"}}},
+    {"name": "left rim", "from": [0, 0, 14], "to": [2, 16, 16], "faces": {"south": {"texture": "#casing"}, "east": {"texture": "#steel"}, "west": {"texture": "#steel"}, "up": {"texture": "#steel"}, "down": {"texture": "#steel"}}},
+    {"name": "right rim", "from": [14, 0, 14], "to": [16, 16, 16], "faces": {"south": {"texture": "#casing"}, "east": {"texture": "#steel"}, "west": {"texture": "#steel"}, "up": {"texture": "#steel"}, "down": {"texture": "#steel"}}},
+    {"name": "lower rim", "from": [2, 0, 14], "to": [14, 2, 16], "faces": {"south": {"texture": "#casing"}, "up": {"texture": "#steel"}, "down": {"texture": "#steel"}}},
+    {"name": "upper rim", "from": [2, 14, 14], "to": [14, 16, 16], "faces": {"south": {"texture": "#casing"}, "up": {"texture": "#steel"}, "down": {"texture": "#steel"}}},
+    {"name": "positive post", "from": [4, 10, 14], "to": [7, 13, 16], "faces": {"south": {"texture": "#contacts", "uv": [6, 12, 9, 15]}, "east": {"texture": "#contacts"}, "west": {"texture": "#contacts"}, "up": {"texture": "#contacts"}, "down": {"texture": "#contacts"}}},
+    {"name": "negative post", "from": [9, 10, 14], "to": [12, 13, 16], "faces": {"south": {"texture": "#contacts", "uv": [6, 12, 9, 15]}, "east": {"texture": "#contacts"}, "west": {"texture": "#contacts"}, "up": {"texture": "#contacts"}, "down": {"texture": "#contacts"}}},
+    {"name": "interior data socket", "from": [5, 5, 14], "to": [11, 10, 16], "faces": {"south": {"texture": "#data_port", "uv": [0, 0, 6, 5]}, "east": {"texture": "#insulator"}, "west": {"texture": "#insulator"}, "up": {"texture": "#insulator"}, "down": {"texture": "#insulator"}}},
+    {"name": "connection lamp", "from": [6, 3, 14], "to": [10, 5, 15], "faces": {"south": {"texture": "#indicator", "uv": [0, 0, 4, 2]}, "east": {"texture": "#insulator"}, "west": {"texture": "#insulator"}, "up": {"texture": "#insulator"}, "down": {"texture": "#insulator"}}}
+  ]
+}

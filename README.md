@@ -2,7 +2,7 @@
 
 Power Dock connects Power Grid circuits between a Sable ship and a fixed station or between two Sable ships. The docks pull together, extend their arms, and transfer power in either direction.
 
-[Download Power Dock](https://github.com/Cha0sCollective/Power-Dock/releases/latest)
+[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the Loconautics beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta1)
 
 ## What you need
 
@@ -27,6 +27,27 @@ Use Crafter Slot Covers for the two blank slots in a full grid, everything folds
 
 A carrier can hold several Sable craft at once. Give each plane or supply pod its own dock and control the matching carrier dock with a separate redstone switch. For a craft with multiple dock pairs, match the spacing and orientation on both hulls so all the heads meet when the hulls line up.
 
+### Loconautics trains
+
+Train support was tested with Create: Loconautics 0.1.3 Beta and Create Simulated 1.3.0. Install both to use the train features. CC: Tweaked 1.120.2 is optional for wired data.
+
+Mount matching docks facing each other on the carriage and on a station or Sable ship. Stop alongside the dock or under an overhead dock, with a clear gap of up to 1½ blocks between their faces. Arm both sides. The arms adjust to small offsets and the rails continue to guide the carriage. The circuit opens when the carriage moves out of reach or either dock is disarmed.
+
+### Rail Jumpers
+
+Mount either Rail Jumper on the same car as a Loconautics knuckle. Point its cord outlet toward the next car, the same way the knuckle faces. You can mount it in the middle, on a corner, or higher up. You can mix the two mounts on a train or across a single pair.
+
+Each jumper uses the closest knuckle facing the same way on its own car. Put jumpers on matching corners to run two separate circuits across one knuckle pair. Extra sockets stay open when that end of the neighboring car has fewer jumpers.
+
+- **Deck Rail Jumper.** Set it on an open deck. The two Power Grid posts and square data socket face up. With CC: Tweaked installed, place a Networking Cable directly above the block.
+- **Flush Rail Jumper.** Replace one block in the end wall. Place it from inside while looking toward the gap between cars. The copper posts and data socket face into the car. Place a Networking Cable directly against the inside socket, then route it to a Wired Modem. The thin cable leaves both copper posts exposed. The cord outlet is on the outer face of the wall.
+
+Wire the two copper posts into each car's Power Grid circuit. On a middle car, wire Positive to Positive and Negative to Negative between its two jumpers. Join the CC cables on that car as well to continue the wired network through it.
+
+The cord appears and the amber lamps light when the knuckles couple. The cord bends as the cars move and disconnects power and data when the knuckles open. A comparator reads 15 while connected.
+
+Craft two Deck Rail Jumpers with a Copper Cord between two Power Grid Sockets and a Brass Sheet below it. Combine a Deck Rail Jumper with an Iron Sheet to make a Flush Rail Jumper.
+
 ## Pin Dock
 
 Surround a Power Dock with eight pieces of Power Grid Insulated Copper Wire in a crafting table to make a Pin Dock.
@@ -35,7 +56,7 @@ Two Pin Docks join pins **1–8** and **Common** one for one. Hold a Power Grid 
 
 ## CC:Tweaked
 
-With CC:Tweaked installed, both dock types can be controlled by a computer. Put a computer directly beside the dock or use a wired modem with peripheral access enabled. The peripheral type is `power_dock`.
+With CC:Tweaked installed, a computer can control the Power Dock and Pin Dock. Put a computer directly beside the dock or use a wired modem with peripheral access enabled. The peripheral type is `power_dock`.
 
 To join the wired networks, connect a CC:Tweaked wired modem or network cable directly to the **back** of each Pin Dock. Connect that modem or cable to the network on its own hull. Turn on peripheral access at the modems next to the devices you want to share. When the Pin Docks close, the two networks can see each other's exposed peripherals. Opening the docks splits the networks once the last wired path between them is gone.
 
@@ -53,6 +74,8 @@ To join the wired networks, connect a CC:Tweaked wired modem or network cable di
 Run `./gradlew build` with Java 21, or `gradlew.bat build` on Windows. Put the jar from `build/libs` in your Minecraft `mods` folder.
 
 Run `./gradlew runGameTestServer` for the focused docking tests with Sable 2.0.6. Add `-PsableVersion=2.0.5` to test the minimum supported version, or add `-PwithComputerCraft=true` to run the wired networking fixture with CC:Tweaked 1.120.2.
+
+Use `-PloconauticsTestMods=/path/to/mods` to run the carriage tests with Loconautics 0.1.3 Beta and Create Simulated 1.3.0 jars in that folder. Add `-PwithComputerCraft=true` to check wired data alongside power through the three-car Rail Jumper fixture.
 
 Run `python tools/test_dock_restart.py --sable 2.0.6` to test a clean restart and an abrupt stop after a saved checkpoint. The runner starts fresh server processes and keeps the disposable worlds and logs in `build/dock-restart`.
 

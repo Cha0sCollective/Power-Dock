@@ -1,0 +1,4 @@
+{
+  "parent": "powerdock:block/rail_jumper",
+  "textures": {"indicator": "powerdock:block/indicator_on"}
+}

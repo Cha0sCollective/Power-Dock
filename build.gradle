@@ -4,13 +4,14 @@ plugins {
 }
 
 group = 'org.cha0scollective.powerdock'
-version = '0.3.0'
+version = '0.4.0-beta1'
 base { archivesName = 'power-dock' }
 java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
 def minimumSableVersion = '2.0.5'
 def sableVersion = providers.gradleProperty('sableVersion').orElse('2.0.6').get()
 def computerCraftVersion = '1.120.2'
 def withComputerCraft = providers.gradleProperty('withComputerCraft').map { it.toBoolean() }.getOrElse(false)
+def loconauticsTestMods = providers.gradleProperty('loconauticsTestMods').getOrNull()
 def lifecyclePhase = providers.gradleProperty('dockLifecyclePhase').getOrNull()
 def lifecycleRun = providers.gradleProperty('dockLifecycleRun').getOrNull()
 if (lifecyclePhase != null && (!(lifecyclePhase in ['save-clean', 'save-abrupt', 'restore']) ||
@@ -18,8 +19,10 @@ if (lifecyclePhase != null && (!(lifecyclePhase in ['save-clean', 'save-abrupt',
     throw new GradleException('Run the dock restart fixture through tools/test_dock_restart.py.')
 }
 def dockingTestRun = layout.buildDirectory.dir(lifecyclePhase != null ? "dock-restart/${lifecycleRun}" :
-        "power-dock-test-${sableVersion}${withComputerCraft ? '-cc' : ''}")
-def dockingTestLane = lifecyclePhase != null ? 'lifecycle' : withComputerCraft ? 'computercraft' : 'base'
+        "power-dock-test-${sableVersion}${loconauticsTestMods != null ? '-loconautics' : ''}${withComputerCraft ? '-cc' : ''}")
+def dockingTestLane = lifecyclePhase != null ? 'lifecycle' :
+        loconauticsTestMods != null ? (withComputerCraft ? 'loconautics-cc' : 'loconautics') :
+        withComputerCraft ? 'computercraft' : 'base'
 
 sourceSets {
     gameTest {
@@ -34,6 +37,10 @@ sourceSets {
         if (lifecyclePhase != null) {
             java.srcDir 'src/lifecycleGameTest/java'
             resources.srcDir 'src/lifecycleGameTest/resources'
+        }
+        if (loconauticsTestMods != null) {
+            java.srcDir 'src/loconauticsGameTest/java'
+            resources.srcDir 'src/loconauticsGameTest/resources'
         }
     }
 }
@@ -72,6 +79,8 @@ neoForge {
             if (lifecyclePhase != null) {
                 systemProperty 'neoforge.enabledGameTestNamespaces', 'powerdock_lifecycle_tests'
                 systemProperty 'powerdock.test.lifecyclePhase', lifecyclePhase
+            } else if (loconauticsTestMods != null) {
+                systemProperty 'neoforge.enabledGameTestNamespaces', 'powerdock_loconautics_tests'
             } else {
                 systemProperty 'neoforge.enabledGameTestNamespaces',
                         withComputerCraft ? 'powerdock_cc_tests' : 'powerdock_tests'
@@ -104,6 +113,13 @@ dependencies {
         def computerCraft = "cc.tweaked:cc-tweaked-1.21.1-forge:${computerCraftVersion}"
         gameTestCompileOnly(computerCraft) { transitive = false }
         runtimeOnly(computerCraft) { transitive = false }
+    }
+    if (loconauticsTestMods != null) {
+        def trainMods = fileTree(loconauticsTestMods) {
+            include 'loconautics-*.jar', 'simulated-*.jar'
+        }
+        gameTestCompileOnly trainMods
+        runtimeOnly trainMods
     }
 }
 

@@ -28,6 +28,17 @@ public final class PowerDock {
     static final Supplier<BlockEntityType<PowerDockBlockEntity>> DOCK_ENTITY =
             BLOCK_ENTITIES.register("power_dock", () -> BlockEntityType.Builder
                     .of(PowerDockBlockEntity::new, DOCK.get(), PIN_DOCK.get()).build(null));
+    static final Supplier<RailJumperBlock> RAIL_JUMPER = BLOCKS.registerBlock("rail_jumper",
+            properties -> new RailJumperBlock(properties, false), jumperProperties());
+    static final Supplier<RailJumperBlock> FLUSH_RAIL_JUMPER = BLOCKS.registerBlock("flush_rail_jumper",
+            properties -> new RailJumperBlock(properties, true), jumperProperties());
+    static final Supplier<BlockEntityType<RailJumperBlockEntity>> JUMPER_ENTITY =
+            BLOCK_ENTITIES.register("rail_jumper", () -> BlockEntityType.Builder
+                    .of(RailJumperBlockEntity::new, RAIL_JUMPER.get(), FLUSH_RAIL_JUMPER.get()).build(null));
+
+    private static BlockBehaviour.Properties jumperProperties() {
+        return BlockBehaviour.Properties.of().strength(3, 6).requiresCorrectToolForDrops().noOcclusion();
+    }
 
     private static BlockBehaviour.Properties dockProperties() {
         return BlockBehaviour.Properties.of().strength(3, 6).requiresCorrectToolForDrops()
@@ -40,10 +51,14 @@ public final class PowerDock {
         BLOCK_ENTITIES.register(modBus);
         var item = ITEMS.registerSimpleBlockItem("power_dock", DOCK);
         var pinItem = ITEMS.registerSimpleBlockItem("pin_dock", PIN_DOCK);
+        var jumperItem = ITEMS.registerSimpleBlockItem("rail_jumper", RAIL_JUMPER);
+        var flushJumperItem = ITEMS.registerSimpleBlockItem("flush_rail_jumper", FLUSH_RAIL_JUMPER);
         modBus.addListener((BuildCreativeModeTabContentsEvent event) -> {
             if (event.getTabKey() == CreativeModeTabs.REDSTONE_BLOCKS) {
                 event.accept(item.get());
                 event.accept(pinItem.get());
+                event.accept(jumperItem.get());
+                event.accept(flushJumperItem.get());
             }
         });
         computerCraft = ModList.get().isLoaded("computercraft");
