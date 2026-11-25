@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "facing=north,connected=false": {
+      "model": "powerdock:block/pantograph"
+    },
+    "facing=north,connected=true": {
+      "model": "powerdock:block/pantograph_connected"
+    },
+    "facing=east,connected=false": {
+      "model": "powerdock:block/pantograph",
+      "y": 90
+    },
+    "facing=east,connected=true": {
+      "model": "powerdock:block/pantograph_connected",
+      "y": 90
+    },
+    "facing=south,connected=false": {
+      "model": "powerdock:block/pantograph",
+      "y": 180
+    },
+    "facing=south,connected=true": {
+      "model": "powerdock:block/pantograph_connected",
+      "y": 180
+    },
+    "facing=west,connected=false": {
+      "model": "powerdock:block/pantograph",
+      "y": 270
+    },
+    "facing=west,connected=true": {
+      "model": "powerdock:block/pantograph_connected",
+      "y": 270
+    }
+  }
+}

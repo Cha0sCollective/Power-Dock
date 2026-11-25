@@ -8,6 +8,9 @@ version="${version}"
 displayName="Power Dock"
 description='''Magnetic docking ports that connect Power Grid circuits across Sable sublevels.'''
 
+[[mixins]]
+config="powerdock.mixins.json"
+
 [[dependencies.powerdock]]
 modId="neoforge"
 type="required"

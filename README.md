@@ -2,11 +2,13 @@
 
 Power Dock connects Power Grid circuits between a Sable ship and a fixed station or between two Sable ships. The docks pull together, extend their arms, and transfer power in either direction.
 
-[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the Loconautics beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta1)
+[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the Loconautics beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta2)
 
 ## What you need
 
 Minecraft 1.21.1 with NeoForge 21.1.231 or newer, Create 6.0.10, Power Grid 0.6.2, Sable 2.0.5 or 2.0.6, and Architectury API. Install Power Dock on the server and on each client.
+
+Hover over a Power Dock, Rail Jumper, Catenary Hanger, or Pantograph in your inventory and hold the Ponder key (W by default) for a walkthrough. The hanger's second chapter shows how to use Power Grid Copper Wire to build the overhead line.
 
 ## Crafting
 
@@ -48,6 +50,22 @@ The cord appears and the amber lamps light when the knuckles couple. The cord be
 
 Craft two Deck Rail Jumpers with a Copper Cord between two Power Grid Sockets and a Brass Sheet below it. Combine a Deck Rail Jumper with an Iron Sheet to make a Flush Rail Jumper.
 
+### Overhead power
+
+Craft two Catenary Hangers with a Copper Sheet between two Iron Sheets and a Power Grid Socket below the Copper Sheet. Craft a Pantograph with a Brass Casing between two Iron Sheets, a Copper Sheet above the casing, and a Power Grid Socket below it.
+
+Place Catenary Hangers above the center of the Create track, including partway through curves and inclines. The hanger lines up across the track as you place it, with the copper posts on the crossbeam. Space hangers along bends and climbs so the wires have visible supports.
+
+Hold Power Grid **Copper Wire** and sneak-right-click the first hanger, then the next hanger to preview both wires. Sneak-right-click the destination again to confirm. Start from that hanger to extend the line. Pick the far hanger on the branch you intend to wire. If two routes could reach it, use closer hangers to make the choice clear. Each link can follow up to 64 blocks of track.
+
+Use an empty hand on a hanger to cycle the clear width from 3 to 13 blocks. Sneak and use an empty hand to cycle the wire height from 4 to 12 blocks above the rail. The default is 7 blocks wide and 7 blocks high. The two wire paths curve and climb together, and blend to a different height when the next hanger is set higher or lower. Wire the first hanger's copper posts to Power Grid with normal right-clicks. To remove spans, sneak-right-click the same linked hanger three times with Copper Wire and follow the confirmation prompt.
+
+The masts extend down to rail height. Add footings under the masts on raised track or uneven ground. The hanger housing is the collidable part of the fixture. Keep the feeder and the linked hangers along the active power path loaded. An unloaded hanger breaks that circuit until it loads again.
+
+Fit a **Pantograph** on the roof of a Sable carriage. Place it while facing along the carriage so the folding arm runs along its length and the contact bar sits across the track. Connect its two posts to the onboard Power Grid circuit. Right-click with an empty hand to raise or lower it. The head has a working reach of about ¾ to 5½ blocks above its mount and can move 1¼ blocks side to side. The amber lamp and comparator indicate contact. Keep each onboard circuit on one raised pickup when crossing between different feeders.
+
+For cab control, sneak-right-click the pantograph with an empty hand to open its receiver. Copy the two items from a transmitting **Create Redstone Link** into the matching slots in the same order, then select **Apply**. A powered link raises the pickup and turning the link off lowers it. A manual click still works and lasts until the signal changes. Select **Clear** and **Apply** to remove the binding.
+
 ## Pin Dock
 
 Surround a Power Dock with eight pieces of Power Grid Insulated Copper Wire in a crafting table to make a Pin Dock.
@@ -75,7 +93,7 @@ Run `./gradlew build` with Java 21, or `gradlew.bat build` on Windows. Put the j
 
 Run `./gradlew runGameTestServer` for the focused docking tests with Sable 2.0.6. Add `-PsableVersion=2.0.5` to test the minimum supported version, or add `-PwithComputerCraft=true` to run the wired networking fixture with CC:Tweaked 1.120.2.
 
-Use `-PloconauticsTestMods=/path/to/mods` to run the carriage tests with Loconautics 0.1.3 Beta and Create Simulated 1.3.0 jars in that folder. Add `-PwithComputerCraft=true` to check wired data alongside power through the three-car Rail Jumper fixture.
+Use `-PloconauticsTestMods=/path/to/mods` to run the carriage tests with Loconautics 0.1.3 Beta and Create Simulated 1.3.0 jars in that folder. The three-car fixture checks overhead power through a curve, grade, and insulated gap. Add `-PwithComputerCraft=true` to also check wired data through the Rail Jumpers.
 
 Run `python tools/test_dock_restart.py --sable 2.0.6` to test a clean restart and an abrupt stop after a saved checkpoint. The runner starts fresh server processes and keeps the disposable worlds and logs in `build/dock-restart`.
 

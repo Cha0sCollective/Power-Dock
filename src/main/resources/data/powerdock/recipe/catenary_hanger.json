@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": [
+    "ICI",
+    " S "
+  ],
+  "key": {
+    "I": {
+      "item": "create:iron_sheet"
+    },
+    "C": {
+      "item": "create:copper_sheet"
+    },
+    "S": {
+      "item": "powergrid:socket"
+    }
+  },
+  "result": {
+    "id": "powerdock:catenary_hanger",
+    "count": 2
+  }
+}

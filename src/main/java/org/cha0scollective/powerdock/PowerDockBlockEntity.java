@@ -3,7 +3,6 @@ package org.cha0scollective.powerdock;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.block.BlockEntitySubLevelActor;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
-import dev.ryanhcode.sable.companion.math.BoundingBox3d;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -14,6 +13,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import org.joml.Quaternionf;
 import org.joml.Vector3d;
 import org.patryk3211.powergrid.electricity.base.ElectricBlockEntity;
@@ -83,11 +83,11 @@ public final class PowerDockBlockEntity extends ElectricBlockEntity implements B
             return;
         }
 
-        var nearby = new BoundingBox3d(front.x, front.y, front.z, front.x, front.y, front.z)
-                .expand(DockingJoint.CAPTURE_RANGE + 0.75);
+        var nearby = new AABB(front.x, front.y, front.z, front.x, front.y, front.z)
+                .inflate(DockingJoint.CAPTURE_RANGE + 0.75);
         DockCandidate closest = null;
-        for (var candidate : Sable.HELPER.getAllIntersecting(server, nearby)) {
-            if (!(candidate instanceof ServerSubLevel body) || body == targetBody || body.isRemoved()) continue;
+        for (var body : DockSearch.nearby(server, nearby)) {
+            if (body == targetBody || body.isRemoved()) continue;
             var capture = findCapture(server, targetBody, body);
             if (capture != null && (closest == null || capture.distanceSquared() < closest.distanceSquared())) {
                 closest = capture;

@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "org.cha0scollective.powerdock.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "TrackGraphChanges",
+    "TrackGraphRegistryChanges",
+    "TrackGraphLookup"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}

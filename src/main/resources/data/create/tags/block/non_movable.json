@@ -1,4 +1,4 @@
 {
   "replace": false,
-  "values": ["powerdock:power_dock", "powerdock:pin_dock", "powerdock:rail_jumper", "powerdock:flush_rail_jumper"]
+  "values": ["powerdock:power_dock", "powerdock:pin_dock", "powerdock:rail_jumper", "powerdock:flush_rail_jumper", "powerdock:catenary_hanger", "powerdock:pantograph"]
 }

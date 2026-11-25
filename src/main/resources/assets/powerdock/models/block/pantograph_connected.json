@@ -1,0 +1,6 @@
+{
+  "parent": "powerdock:block/pantograph",
+  "textures": {
+    "indicator": "powerdock:block/indicator_on"
+  }
+}
