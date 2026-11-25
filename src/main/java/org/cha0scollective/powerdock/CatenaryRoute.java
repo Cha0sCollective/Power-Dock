@@ -10,6 +10,9 @@ import com.simibubi.create.content.trains.track.ITrackBlock;
 import net.createmod.catnip.data.Couple;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 
@@ -30,6 +33,7 @@ final class CatenaryRoute {
 
     @Nullable
     static BlockPos trackBelow(ServerLevel level, BlockPos hanger) {
+        if (!level.hasChunkAt(hanger)) return null;
         for (int depth = 1; depth <= 16; depth++) {
             var pos = hanger.below(depth);
             if (level.getBlockState(pos).getBlock() instanceof ITrackBlock) return pos;
@@ -182,6 +186,51 @@ final class CatenaryRoute {
             }
             return true;
         }
+
+        CompoundTag save() {
+            var data = new CompoundTag();
+            data.putUUID("Graph", graph.id);
+            var entries = new ListTag();
+            for (var part : parts) {
+                var entry = new CompoundTag();
+                entry.put("Start", part.edge.node1.getLocation().write(null));
+                entry.put("End", part.edge.node2.getLocation().write(null));
+                entry.putDouble("From", part.from);
+                entry.putDouble("To", part.to);
+                entries.add(entry);
+            }
+            data.put("Edges", entries);
+            return data;
+        }
+    }
+
+    @Nullable
+    static Route restore(ServerLevel level, CompoundTag data) {
+        var entries = data.getList("Edges", Tag.TAG_COMPOUND);
+        if (!data.hasUUID("Graph") || entries.isEmpty() || entries.size() > MAX_EDGES) return null;
+        var firstLocation = TrackNodeLocation.read(entries.getCompound(0).getCompound("Start"), null).in(level);
+        var graph = Create.RAILWAYS.trackNetworks.get(data.getUUID("Graph"));
+        if (graph == null || graph.locateNode(firstLocation) == null) {
+            graph = CatenaryTrackIndex.graphAt(level, firstLocation);
+        }
+        if (graph == null) return null;
+        var parts = new ArrayList<Part>();
+        double length = 0;
+        for (int i = 0; i < entries.size(); i++) {
+            var entry = entries.getCompound(i);
+            var first = graph.locateNode(TrackNodeLocation.read(entry.getCompound("Start"), null).in(level));
+            var second = graph.locateNode(TrackNodeLocation.read(entry.getCompound("End"), null).in(level));
+            if (first == null || second == null || i > 0 && parts.getLast().edge.node2 != first) return null;
+            var edge = graph.getConnection(Couple.create(first, second));
+            if (edge == null || edge.isInterDimensional() || edge.getLength() < EPSILON) return null;
+            double from = entry.getDouble("From"), to = entry.getDouble("To");
+            if (!(from >= 0 && to >= from && to <= edge.getLength() + EPSILON)) return null;
+            length += to - from;
+            parts.add(new Part(edge, from, to));
+        }
+        if (length < 0.5 || length > MAX_LENGTH + EPSILON) return null;
+        var points = sample(graph, parts);
+        return points.size() < 2 ? null : new Route(graph, List.copyOf(parts), points);
     }
     private record Location(TrackGraph graph, TrackEdge edge, double distance) {}
     private record Part(TrackEdge edge, double from, double to) {}
@@ -210,7 +259,7 @@ final class CatenaryRoute {
                 double total = length + target.distance - begin;
                 if (total < 0.5 || total > MAX_LENGTH + EPSILON) continue;
                 parts.add(new Part(edge, begin, target.distance));
-                var points = sample(parts);
+                var points = sample(graph, parts);
                 var route = new Route(graph, List.copyOf(parts), points);
                 parts.removeLast();
                 if (points.size() > 1 && results.stream().noneMatch(result -> result.points.equals(points))) {
@@ -234,17 +283,18 @@ final class CatenaryRoute {
             visited.remove(edge);
         }
 
-        List<Vec3> sample(List<Part> parts) {
-            var points = new ArrayList<Vec3>();
-            for (var part : parts) {
-                int steps = Math.max(1, (int) Math.ceil((part.to - part.from) * 2));
-                double edgeLength = part.edge.getLength();
-                for (int i = 0; i <= steps; i++) {
-                    var pos = part.edge.getPosition(graph, (part.from + (part.to - part.from) * i / steps) / edgeLength);
-                    if (points.isEmpty() || points.getLast().distanceToSqr(pos) > EPSILON * EPSILON) points.add(pos);
-                }
+    }
+
+    private static List<Vec3> sample(TrackGraph graph, List<Part> parts) {
+        var points = new ArrayList<Vec3>();
+        for (var part : parts) {
+            int steps = Math.max(1, (int) Math.ceil((part.to - part.from) * 2));
+            double edgeLength = part.edge.getLength();
+            for (int i = 0; i <= steps; i++) {
+                var pos = part.edge.getPosition(graph, (part.from + (part.to - part.from) * i / steps) / edgeLength);
+                if (points.isEmpty() || points.getLast().distanceToSqr(pos) > EPSILON * EPSILON) points.add(pos);
             }
-            return List.copyOf(points);
         }
+        return List.copyOf(points);
     }
 }

@@ -17,10 +17,11 @@ import net.minecraft.world.phys.Vec3;
 import org.patryk3211.powergrid.electricity.base.ElectricBlockEntity;
 
 import javax.annotation.Nullable;
+import java.util.Objects;
 
 public final class PantographBlockEntity extends ElectricBlockEntity {
     private static final int RECEIVER_INTERVAL = 4;
-    @Nullable private CatenaryHangerBlockEntity feeder;
+    @Nullable private BlockPos feeder;
     @Nullable private CatenaryContacts contacts;
     @Nullable private Couple<Frequency> receiver;
     @Nullable private Boolean receiverPowered;
@@ -53,14 +54,14 @@ public final class PantographBlockEntity extends ElectricBlockEntity {
             return;
         }
         var base = body.logicalPose().transformPosition(base());
-        var contact = CatenarySpan.nearest(server, base, candidate -> candidate.feeder().available());
+        var contact = CatenaryLines.get(server).nearest(server, base);
         var nextFeeder = contact == null ? null : contact.feeder();
         if (contacts != null) {
-            if (feeder != nextFeeder || !contacts.live()) disconnect();
+            if (!Objects.equals(feeder, nextFeeder) || !contacts.live()) disconnect();
             return;
         }
         if (nextFeeder != null) {
-            contacts = CatenaryContacts.close(server, worldPosition, nextFeeder.getBlockPos(), 0.04f);
+            contacts = CatenaryContacts.close(server, worldPosition, nextFeeder, 0.04f);
             if (contacts != null) {
                 feeder = nextFeeder;
                 showConnection(true);

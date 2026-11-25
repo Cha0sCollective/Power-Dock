@@ -2,7 +2,7 @@
 
 Power Dock connects Power Grid circuits between a Sable ship and a fixed station or between two Sable ships. The docks pull together, extend their arms, and transfer power in either direction.
 
-[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the Loconautics beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta2)
+[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the Loconautics beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta3)
 
 ## What you need
 
@@ -60,9 +60,11 @@ Hold Power Grid **Copper Wire** and sneak-right-click the first hanger, then the
 
 Use an empty hand on a hanger to cycle the clear width from 3 to 13 blocks. Sneak and use an empty hand to cycle the wire height from 4 to 12 blocks above the rail. The default is 7 blocks wide and 7 blocks high. The two wire paths curve and climb together, and blend to a different height when the next hanger is set higher or lower. Wire the first hanger's copper posts to Power Grid with normal right-clicks. To remove spans, sneak-right-click the same linked hanger three times with Copper Wire and follow the confirmation prompt.
 
-The masts extend down to rail height. Add footings under the masts on raised track or uneven ground. The hanger housing is the collidable part of the fixture. Keep the feeder and the linked hangers along the active power path loaded. An unloaded hanger breaks that circuit until it loads again.
+The masts extend down to rail height. Add footings under the masts on raised track or uneven ground. The hanger housing is the collidable part of the fixture. Keep the feeder and the Power Grid circuit that supplies it loaded. The overhead line can carry power through unloaded hanger chunks. When upgrading from beta2, load both hangers on each existing span once so the line can be saved independently of the chunks.
 
 Fit a **Pantograph** on the roof of a Sable carriage. Place it while facing along the carriage so the folding arm runs along its length and the contact bar sits across the track. Connect its two posts to the onboard Power Grid circuit. Right-click with an empty hand to raise or lower it. The head has a working reach of about ¾ to 5½ blocks above its mount and can move 1¼ blocks side to side. The amber lamp and comparator indicate contact. Keep each onboard circuit on one raised pickup when crossing between different feeders.
+
+Loconautics can move an unattended scheduled train through unloaded chunks in ghost mode. With Loconautics station chunk loading enabled, the pantograph can pick up power again when the train reloads at a scheduled stop under a live overhead line.
 
 For cab control, sneak-right-click the pantograph with an empty hand to open its receiver. Copy the two items from a transmitting **Create Redstone Link** into the matching slots in the same order, then select **Apply**. A powered link raises the pickup and turning the link off lowers it. A manual click still works and lasts until the signal changes. Select **Clear** and **Apply** to remove the binding.
 
@@ -93,7 +95,7 @@ Run `./gradlew build` with Java 21, or `gradlew.bat build` on Windows. Put the j
 
 Run `./gradlew runGameTestServer` for the focused docking tests with Sable 2.0.6. Add `-PsableVersion=2.0.5` to test the minimum supported version, or add `-PwithComputerCraft=true` to run the wired networking fixture with CC:Tweaked 1.120.2.
 
-Use `-PloconauticsTestMods=/path/to/mods` to run the carriage tests with Loconautics 0.1.3 Beta and Create Simulated 1.3.0 jars in that folder. The three-car fixture checks overhead power through a curve, grade, and insulated gap. Add `-PwithComputerCraft=true` to also check wired data through the Rail Jumpers.
+Use `-PloconauticsTestMods=/path/to/mods` to run the carriage tests with Loconautics 0.1.3 Beta and Create Simulated 1.3.0 jars in that folder. These tests cover overhead power through curves, grades, and unloaded hanger chunks, plus power pickup at an unattended scheduled stop. Add `-PwithComputerCraft=true` to also check wired data through the Rail Jumpers.
 
 Run `python tools/test_dock_restart.py --sable 2.0.6` to test a clean restart and an abrupt stop after a saved checkpoint. The runner starts fresh server processes and keeps the disposable worlds and logs in `build/dock-restart`.
 

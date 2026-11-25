@@ -31,6 +31,7 @@ import java.util.UUID;
 public final class CatenaryTrackIndex {
     private static final Map<ServerLevel, CatenaryTrackIndex> LEVELS = new IdentityHashMap<>();
     private static final ThreadLocal<CatenaryTrackIndex> STRAIGHT_LOOKUP = new ThreadLocal<>();
+    private static long revision;
 
     private final ServerLevel level;
     private final SpatialBuckets<Curve> curves = new SpatialBuckets<>();
@@ -51,7 +52,16 @@ public final class CatenaryTrackIndex {
     public static void graphChanged(TrackGraph graph) {
         var server = ServerLifecycleHooks.getCurrentServer();
         if (server == null || !server.isSameThread()) return;
+        revision++;
         for (var index : LEVELS.values()) index.dirty.add(graph.id);
+    }
+
+    static long revision() { return revision; }
+
+    @Nullable
+    static TrackGraph graphAt(ServerLevel level, TrackNodeLocation location) {
+        var graphs = current(level).nodes.get(location);
+        return graphs == null ? null : graphs.getFirst();
     }
 
     static List<Curve> curvesBelow(ServerLevel level, Vec3 column) {

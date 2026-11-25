@@ -3,7 +3,6 @@ package org.cha0scollective.powerdock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
@@ -20,7 +19,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Predicate;
+import java.util.function.Function;
 
 @EventBusSubscriber(modid = PowerDock.ID)
 final class CatenarySpan {
@@ -28,30 +27,30 @@ final class CatenarySpan {
     static final double SIDE_TRAVEL = 1.25;
     static final double MIN_RISE = 0.75;
     static final double MAX_RISE = 5.5;
-    private static final Map<Level, Map<Long, Set<Segment>>> BY_LEVEL = new IdentityHashMap<>();
-    private final CatenaryHangerBlockEntity owner;
+    private static final Map<Level, ClientSpans> CLIENT_SPANS = new IdentityHashMap<>();
+    private final BlockPos end;
     final List<Head> points;
     final AABB renderBounds;
     private final List<Segment> segments = new ArrayList<>();
 
-    private CatenarySpan(CatenaryHangerBlockEntity owner, List<Head> points) {
-        this.owner = owner;
+    private CatenarySpan(BlockPos end, List<Head> points) {
+        this.end = end;
         this.points = points;
-        var bounds = new AABB(owner.getBlockPos());
+        var bounds = new AABB(end);
         for (var point : points) {
             var center = point.center();
             bounds = bounds.minmax(new AABB(center.x, center.y, center.z, center.x, center.y, center.z));
         }
         renderBounds = bounds.inflate(8, 16, 8);
-        for (int i = 1; i < points.size(); i++) segments.add(new Segment(owner, points.get(i - 1), points.get(i)));
+        for (int i = 1; i < points.size(); i++) segments.add(new Segment(end, points.get(i - 1), points.get(i)));
     }
 
     @SubscribeEvent
     public static void unload(LevelEvent.Unload event) {
-        if (event.getLevel() instanceof Level level) BY_LEVEL.remove(level);
+        if (event.getLevel() instanceof Level level && level.isClientSide) CLIENT_SPANS.remove(level);
     }
 
-    static CatenarySpan create(CatenaryHangerBlockEntity owner, CatenaryRoute.Route path, int startHeight, int endHeight) {
+    static CatenarySpan create(BlockPos end, CatenaryRoute.Route path, int startHeight, int endHeight) {
         var route = path.points();
         var points = new ArrayList<Head>(route.size());
         double total = 0;
@@ -67,52 +66,74 @@ final class CatenarySpan {
             else tangent = route.get(i + 1).subtract(route.get(i - 1));
             points.add(Head.along(route.get(i).add(0, height, 0), tangent));
         }
-        return new CatenarySpan(owner, List.copyOf(points));
+        return new CatenarySpan(end, List.copyOf(points));
     }
 
-    void register(Level level) {
-        var cells = BY_LEVEL.computeIfAbsent(level, unused -> new HashMap<>());
-        for (var segment : segments) {
-            segment.forCells(cell -> cells.computeIfAbsent(cell, unused -> new HashSet<>()).add(segment));
-        }
+    void registerClient(Level level, BlockPos feeder) {
+        var client = CLIENT_SPANS.computeIfAbsent(level, unused -> new ClientSpans(new Index(), new HashMap<>()));
+        client.index.add(this);
+        client.feeders.put(end, feeder);
     }
 
-    void unregister(Level level) {
-        var cells = BY_LEVEL.get(level);
-        if (cells == null) return;
-        for (var segment : segments) {
-            segment.forCells(cell -> {
-                var contents = cells.get(cell);
-                if (contents != null && contents.remove(segment) && contents.isEmpty()) cells.remove(cell);
-            });
-        }
-        if (cells.isEmpty()) BY_LEVEL.remove(level);
+    void unregisterClient(Level level) {
+        var client = CLIENT_SPANS.get(level);
+        if (client == null) return;
+        client.index.remove(this);
+        client.feeders.remove(end);
+        if (client.feeders.isEmpty()) CLIENT_SPANS.remove(level);
     }
 
     @Nullable
-    static Contact nearest(Level level, Vec3 base, Predicate<Contact> available) {
-        var cells = BY_LEVEL.get(level);
-        if (cells == null) return null;
-        var entries = cells.get(new ChunkPos(BlockPos.containing(base)).toLong());
-        if (entries == null) return null;
-        Contact best = null;
-        boolean tiedSection = false;
-        for (var segment : entries) {
-            var contact = segment.contact(base);
-            if (contact == null || (best != null && contact.score > best.score + 1e-6) || !available.test(contact)) continue;
-            if (best != null && Math.abs(contact.score - best.score) < 1e-6) {
-                if (contact.feeder != best.feeder) tiedSection = true;
-                continue;
+    static Contact nearestClient(Level level, Vec3 base) {
+        var client = CLIENT_SPANS.get(level);
+        return client == null ? null : client.index.nearest(base, client.feeders::get);
+    }
+
+    private record ClientSpans(Index index, Map<BlockPos, BlockPos> feeders) {}
+
+    static final class Index {
+        private final Map<Long, Set<Segment>> cells = new HashMap<>();
+
+        void add(CatenarySpan span) {
+            for (var segment : span.segments) {
+                segment.forCells(cell -> cells.computeIfAbsent(cell, unused -> new HashSet<>()).add(segment));
             }
-            best = contact;
-            tiedSection = false;
         }
-        return tiedSection ? null : best;
+
+        void remove(CatenarySpan span) {
+            for (var segment : span.segments) {
+                segment.forCells(cell -> {
+                    var contents = cells.get(cell);
+                    if (contents != null && contents.remove(segment) && contents.isEmpty()) cells.remove(cell);
+                });
+            }
+        }
+
+        @Nullable
+        Contact nearest(Vec3 base, Function<BlockPos, BlockPos> feederAt) {
+            var entries = cells.get(new ChunkPos(BlockPos.containing(base)).toLong());
+            if (entries == null) return null;
+            Contact best = null;
+            boolean tiedSection = false;
+            for (var segment : entries) {
+                var sample = segment.sample(base);
+                if (sample == null || best != null && sample.score > best.score + 1e-6) continue;
+                var feeder = feederAt.apply(segment.end);
+                if (feeder == null) continue;
+                if (best != null && Math.abs(sample.score - best.score) < 1e-6) {
+                    if (!feeder.equals(best.feeder)) tiedSection = true;
+                    continue;
+                }
+                best = new Contact(feeder, sample.head, sample.score);
+                tiedSection = false;
+            }
+            return tiedSection ? null : best;
+        }
     }
 
     ListTag write() {
         var data = new ListTag();
-        var origin = Vec3.atLowerCornerOf(owner.getBlockPos());
+        var origin = Vec3.atLowerCornerOf(end);
         for (var point : points) {
             var local = point.center.subtract(origin);
             var entry = new CompoundTag();
@@ -127,18 +148,19 @@ final class CatenarySpan {
     }
 
     @Nullable
-    static CatenarySpan read(CatenaryHangerBlockEntity owner, CompoundTag data) {
-        var entries = data.getList("Span", Tag.TAG_COMPOUND);
+    static CatenarySpan read(BlockPos end, ListTag entries) {
         if (entries.size() < 2 || entries.size() > 512) return null;
-        var origin = Vec3.atLowerCornerOf(owner.getBlockPos());
+        var origin = Vec3.atLowerCornerOf(end);
         var points = new ArrayList<Head>();
         for (int i = 0; i < entries.size(); i++) {
             var entry = entries.getCompound(i);
             var pos = origin.add(entry.getDouble("X"), entry.getDouble("Y"), entry.getDouble("Z"));
             var across = new Vec3(entry.getDouble("AcrossX"), 0, entry.getDouble("AcrossZ"));
+            if (!Double.isFinite(pos.lengthSqr()) || !Double.isFinite(across.lengthSqr())
+                    || pos.distanceToSqr(origin) > 96 * 96 || across.lengthSqr() > 1) return null;
             points.add(new Head(pos, across));
         }
-        return new CatenarySpan(owner, List.copyOf(points));
+        return new CatenarySpan(end, List.copyOf(points));
     }
 
     record Head(Vec3 center, Vec3 across) {
@@ -151,9 +173,10 @@ final class CatenarySpan {
         Vec3 returnWire() { return center.subtract(across); }
     }
 
-    record Contact(CatenaryHangerBlockEntity feeder, Head head, double score) {}
+    record Contact(BlockPos feeder, Head head, double score) {}
+    private record Sample(Head head, double score) {}
 
-    private record Segment(CatenaryHangerBlockEntity owner, Head first, Head second) {
+    private record Segment(BlockPos end, Head first, Head second) {
         void forCells(java.util.function.LongConsumer handle) {
             var a = first.center;
             var b = second.center;
@@ -165,7 +188,7 @@ final class CatenarySpan {
         }
 
         @Nullable
-        Contact contact(Vec3 base) {
+        Sample sample(Vec3 base) {
             var a = first.center;
             var b = second.center;
             double x = b.x - a.x, z = b.z - a.z;
@@ -179,9 +202,7 @@ final class CatenarySpan {
             double dx = base.x - center.x, dz = base.z - center.z;
             double lateral = dx * dx + dz * dz;
             if (lateral > SIDE_TRAVEL * SIDE_TRAVEL) return null;
-            var feeder = owner.feeder();
-            return feeder == null ? null
-                    : new Contact(feeder, new Head(center, first.across.lerp(second.across, t)), lateral + rise * rise * 0.01);
+            return new Sample(new Head(center, first.across.lerp(second.across, t)), lateral + rise * rise * 0.01);
         }
     }
 }

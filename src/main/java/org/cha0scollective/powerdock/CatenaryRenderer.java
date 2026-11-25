@@ -129,7 +129,7 @@ final class CatenaryRenderer {
             if (body != null && raised) {
                 var bodyPose = body.renderPose(partialTick);
                 var world = bodyPose.transformPosition(pickup.base());
-                var contact = CatenarySpan.nearest(level, world, unused -> true);
+                var contact = CatenarySpan.nearestClient(level, world);
                 if (contact != null) {
                     var left = inverse(bodyPose, contact.head().supply()).subtract(pos);
                     var right = inverse(bodyPose, contact.head().returnWire()).subtract(pos);
