@@ -24,9 +24,13 @@ final class PowerDockPonder implements PonderPlugin {
     @Override
     public void registerScenes(PonderSceneRegistrationHelper<ResourceLocation> helper) {
         var hanger = id("catenary_hanger");
-        helper.forComponents(hanger).addStoryBoard("catenary", OverheadPonders::hanger);
+        helper.forComponents(hanger).addStoryBoard("catenary_placement", OverheadPonders::hanger);
         helper.forComponents(hanger, CatenaryWireUse.COPPER_WIRE)
                 .addStoryBoard("catenary", OverheadPonders::route);
+        helper.forComponents(hanger, CatenaryWireUse.COPPER_WIRE)
+                .addStoryBoard("catenary_network", CatenaryNetworkPonders::branches);
+        helper.forComponents(hanger)
+                .addStoryBoard("catenary_network", CatenaryNetworkPonders::feeders);
         helper.forComponents(id("pantograph")).addStoryBoard("pantograph", OverheadPonders::pantograph);
         helper.forComponents(id("power_dock")).addStoryBoard("power_dock", DockingPonders::dock);
         helper.forComponents(id("rail_jumper")).addStoryBoard("rail_jumper", DockingPonders::deckJumper);

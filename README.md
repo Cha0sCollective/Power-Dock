@@ -2,13 +2,13 @@
 
 Power Dock connects Power Grid circuits between a Sable ship and a fixed station or between two Sable ships. The docks pull together, extend their arms, and transfer power in either direction.
 
-[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the Loconautics beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta3)
+[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta4)
 
 ## What you need
 
 Minecraft 1.21.1 with NeoForge 21.1.231 or newer, Create 6.0.10, Power Grid 0.6.2, Sable 2.0.5 or 2.0.6, and Architectury API. Install Power Dock on the server and on each client.
 
-Hover over a Power Dock, Rail Jumper, Catenary Hanger, or Pantograph in your inventory and hold the Ponder key (W by default) for a walkthrough. The hanger's second chapter shows how to use Power Grid Copper Wire to build the overhead line.
+Hover over a Power Dock, Rail Jumper, Catenary Hanger, or Pantograph in your inventory and hold the Ponder key (W by default) for a walkthrough. The hanger's chapters cover rail placement and clearance, linking with Power Grid Copper Wire, building and cutting loops, and connecting multiple feeders.
 
 ## Crafting
 
