@@ -1,5 +1,6 @@
 package org.cha0scollective.powerdock.gametest;
 
+import com.mojang.authlib.GameProfile;
 import com.lycoris.loconautics.content.knuckle.KnuckleBlockEntity;
 import com.lycoris.loconautics.content.knuckle.KnuckleConnectionManager;
 import com.lycoris.loconautics.trainphysics.SableTrain;
@@ -25,33 +26,47 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ClientInformation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.commands.arguments.EntityAnchorArgument;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.MenuProvider;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.fml.ModList;
 import org.joml.Vector3d;
 import org.patryk3211.powergrid.electricity.GlobalElectricNetworks;
 import org.patryk3211.powergrid.electricity.base.IElectric;
+import org.patryk3211.powergrid.electricity.base.TerminalBoundingBox;
 import org.patryk3211.powergrid.electricity.sim.ElectricWire;
 import org.patryk3211.powergrid.electricity.sim.node.CurrentSourceWire;
 import org.patryk3211.powergrid.electricity.wire.BlockWireEndpoint;
+import org.patryk3211.powergrid.electricity.wire.WireConnection;
 import org.cha0scollective.powerdock.CatenaryHangerBlockEntity;
 import org.cha0scollective.powerdock.PantographBlockEntity;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.OptionalInt;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @GameTestHolder("powerdock_loconautics_tests")
 @PrefixGameTestTemplate(false)
@@ -97,6 +112,7 @@ public final class RailJumperGameTest {
         final int[] curve = new int[3];
         final int[] grade = new int[3];
         List<BlockPos> hangers;
+        Vec3 curveAim, gradeAim;
         final boolean withComputerCraft = ModList.get().isLoaded("computercraft");
         RailJumperDataTest data;
         ElectricWire load;
@@ -128,6 +144,8 @@ public final class RailJumperGameTest {
             var bend = bezier(CURVE_START, CURVE_END, EAST, NORTH, "curve");
             var climb = bezier(new BlockPos(CURVE_END.getX(), TRACK_Y, GRADE_START), new BlockPos(CURVE_END.getX(), TOP_Y, GRADE_END),
                     new Vec3(0, 0, 1), NORTH, "grade");
+            curveAim = bend.getPosition(0.34);
+            gradeAim = climb.getPosition(0.69);
             var bendHanger = BlockPos.containing(bend.getPosition(0.5).add(0, 7, 0));
             var climbHanger = BlockPos.containing(climb.getPosition(0.5).add(0, 7, 0));
             for (var hanger : new BlockPos[]{bendHanger, climbHanger}) {
@@ -300,6 +318,11 @@ public final class RailJumperGameTest {
                 test.assertTrue(level.getRecipeManager().byKey(ResourceLocation.fromNamespaceAndPath("powerdock", name)).isPresent(),
                         "Missing catenary recipe: " + name);
             }
+            verifyHangerHeights(FIRST_FEEDER);
+            verifyHangerHeights(hangers.get(2));
+            verifyRailPlacement("straight", new Vec3(12.5, TRACK_Y + 0.125, START_Z + 0.5), false);
+            verifyRailPlacement("curve", curveAim, true);
+            verifyRailPlacement("incline", gradeAim, true);
             for (int i = 1; i < hangers.size(); i++) {
                 var next = (CatenaryHangerBlockEntity) level.getBlockEntity(hangers.get(i));
                 if (i == 2) {
@@ -317,6 +340,154 @@ public final class RailJumperGameTest {
             test.assertTrue(level.getBlockEntity(pickup) instanceof PantographBlockEntity, "Roof pickup was not assembled");
             overheadLoad = grid.makeSimpleWire(new BlockWireEndpoint(pickup, 0), new BlockWireEndpoint(pickup, 1), 20);
             test.assertTrue(overheadLoad != null, "Roof pickup load failed to join its terminals");
+        }
+
+        private void verifyHangerHeights(BlockPos pos) {
+            var hanger = (CatenaryHangerBlockEntity) level.getBlockEntity(pos);
+            var original = hanger.fixture();
+            test.assertTrue(original != null, "Hanger did not snap to the track at " + pos);
+            int originalHeight = hanger.height();
+            for (int i = 0; i < 9; i++) {
+                hanger.adjust(true);
+                var fixture = hanger.fixture();
+                var beam = fixture.crossbeamCenter();
+                double rise = hanger.height() - originalHeight;
+                test.assertTrue(Math.abs(beam.y - original.crossbeamCenter().y - rise) < 1e-6
+                                && Math.abs(fixture.housing().y - original.housing().y - rise) < 1e-6
+                                && fixture.railY() == original.railY(),
+                        "The housing and crossbeam did not move together at " + pos);
+                for (int side : new int[]{-1, 1}) {
+                    var wire = fixture.insulatorBottom(side);
+                    var mount = fixture.insulatorTop(beam, side);
+                    test.assertTrue(wire.x == mount.x && wire.z == mount.z && mount.y == beam.y && mount.y > wire.y,
+                            "A ceramic insulator did not hang between its wire and the crossbeam at " + pos);
+                }
+            }
+            test.assertTrue(hanger.height() == originalHeight, "The height cycle did not wrap at " + pos);
+            System.out.println("CATENARY_HEIGHT crossbeam, masts and ceramic insulators checked at " + pos);
+        }
+
+        private void verifyRailPlacement(String section, Vec3 aim, boolean curved) {
+            var rail = BlockPos.containing(aim);
+            var expected = BlockPos.containing(aim.add(0, 4.625, 0));
+            var railState = level.getBlockState(rail);
+            var ground = BlockPos.betweenClosedStream(rail.offset(-1, -1, -1), rail.offset(1, 2, 1))
+                    .map(BlockPos::immutable).collect(Collectors.toMap(pos -> pos, level::getBlockState));
+            test.assertTrue(!curved || !(railState.getBlock() instanceof ITrackBlock), "The test needs the middle of the " + section);
+            var player = test.makeMockPlayer(GameType.CREATIVE);
+            player.setPos(aim.x - 1.5, aim.y, aim.z);
+            player.lookAt(EntityAnchorArgument.Anchor.EYES, aim);
+            var item = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("powerdock:catenary_hanger")));
+            player.setItemInHand(InteractionHand.MAIN_HAND, item);
+            var railHit = new BlockHitResult(aim, Direction.UP, rail, false);
+            var result = curved ? item.getItem().use(level, player, InteractionHand.MAIN_HAND).getResult()
+                    : item.useOn(new UseOnContext(player, InteractionHand.MAIN_HAND, railHit));
+            test.assertTrue(result.consumesAction(), "The hanger could not be placed above the selected " + section + ": " + result);
+            var hanger = BlockPos.betweenClosedStream(expected.offset(-1, -1, -1), expected.offset(1, 1, 1))
+                    .map(level::getBlockEntity).filter(CatenaryHangerBlockEntity.class::isInstance)
+                    .map(CatenaryHangerBlockEntity.class::cast).findFirst().orElse(null);
+            test.assertTrue(hanger != null, "Placement did not put a hanger above the targeted " + section + " near " + expected);
+            var anchor = hanger.getBlockPos();
+            var oldHead = hanger.headPosition();
+            test.assertTrue(hanger.height() == 4 && oldHead.equals(anchor), "The hanger did not start at four blocks");
+            var mountedRail = Vec3.atLowerCornerOf(anchor).add(hanger.fixture().wireCenter()).add(0, -hanger.height(), 0);
+            test.assertTrue(aim.distanceToSqr(mountedRail) < 0.75 * 0.75, "The hanger snapped away from the aimed rail at " + aim);
+            verifyHangerAlignment(section, hanger);
+            test.assertTrue(ground.entrySet().stream().allMatch(entry -> level.getBlockState(entry.getKey()).equals(entry.getValue())),
+                    "Placement changed the track or added a control block over it");
+
+            var wireItem = BuiltInRegistries.ITEM.get(ResourceLocation.parse("powergrid:wire"));
+            var lead = new ItemStack(wireItem, 32);
+            var endpoint = new BlockWireEndpoint(anchor, 0);
+            var first = endpoint.getExactPosition(level);
+            var remote = new BlockWireEndpoint(FIRST_FEEDER, 0);
+            if (!curved) {
+                player.setItemInHand(InteractionHand.MAIN_HAND, lead);
+                var wireContext = terminalContext(player, oldHead, first);
+                test.assertTrue(IElectric.makeHangingWireConnection(level, endpoint, remote, wireContext).consumesAction()
+                                && hanger.getElectricBehaviour().hasConnection(endpoint, remote),
+                        "Power Grid could not attach a hanging wire to the head");
+            }
+
+            var editor = new ServerPlayer(level.getServer(), level, new GameProfile(UUID.randomUUID(), "HangerTest"),
+                    ClientInformation.createDefault()) {
+                @Override public OptionalInt openMenu(MenuProvider provider) {
+                    containerMenu = provider.createMenu(1, getInventory(), this);
+                    return OptionalInt.of(1);
+                }
+                @Override public void displayClientMessage(net.minecraft.network.chat.Component text, boolean overlay) {}
+            };
+            editor.setPos(player.position());
+            editor.setShiftKeyDown(true);
+            var look = aim.subtract(editor.getEyePosition());
+            editor.setYRot((float) Math.toDegrees(Math.atan2(look.z, look.x)) - 90);
+            editor.setYHeadRot(editor.getYRot());
+            editor.setXRot((float) -Math.toDegrees(Math.atan2(look.y, look.horizontalDistance())));
+            var use = new PlayerInteractEvent.RightClickBlock(editor, InteractionHand.MAIN_HAND, rail, railHit);
+            NeoForge.EVENT_BUS.post(use);
+            var seen = editor.pick(editor.blockInteractionRange(), 1, false);
+            test.assertTrue(use.isCanceled() && editor.containerMenu != editor.inventoryMenu
+                            && ResourceLocation.parse("powerdock:hanger_settings").equals(BuiltInRegistries.MENU.getKey(editor.containerMenu.getType())),
+                    "Sneak-right-click did not open hanger settings over the " + section
+                            + ": canceled=" + use.isCanceled() + ", hit=" + seen.getType() + " " + seen.getLocation()
+                            + ", sneak=" + editor.isShiftKeyDown() + ", mounted=" + (hanger.fixture() != null));
+            var menu = editor.containerMenu;
+            test.assertTrue(menu.clickMenuButton(editor, 1) && menu.clickMenuButton(editor, 3), "The settings did not accept adjustment");
+            var movedHead = hanger.headPosition();
+            test.assertTrue(hanger.height() == 5 && hanger.width() == 9 && movedHead.equals(oldHead.above())
+                            && level.getBlockState(anchor).getShape(level, anchor).isEmpty()
+                            && endpoint.getExactPosition(level).distanceToSqr(first.add(0, 1, 0)) < 1e-8
+                            && (curved || hanger.getElectricBehaviour().hasConnection(endpoint, remote)),
+                    "Raising the assembly did not move the actual Power Grid terminal");
+            test.assertTrue(ground.entrySet().stream().allMatch(entry -> level.getBlockState(entry.getKey()).equals(entry.getValue())),
+                    "Adjusting the hanger changed the track or added a ground block");
+
+            player.setItemInHand(InteractionHand.MAIN_HAND, lead);
+            var movedContext = terminalContext(player, movedHead, endpoint.getExactPosition(level));
+            var used = IElectric.getAt(level, movedHead).onWire(level.getBlockState(movedHead), movedContext);
+            var connectionType = BuiltInRegistries.DATA_COMPONENT_TYPE.get(ResourceLocation.parse("powergrid:connection"));
+            test.assertTrue(used.consumesAction() && lead.get(connectionType) instanceof WireConnection connection
+                            && endpoint.equals(connection.endpoint()),
+                    "Power Grid did not select the moved terminal over the " + section + ": " + used);
+            verifyHangerAlignment(section + " raised", hanger);
+
+            level.setBlockAndUpdate(movedHead.above(), Blocks.STONE.defaultBlockState());
+            menu.clickMenuButton(editor, 1);
+            test.assertTrue(hanger.height() == 5 && movedHead.equals(hanger.headPosition())
+                            && level.getBlockState(movedHead.above()).is(Blocks.STONE),
+                    "Adjusting the hanger overwrote an occupied position");
+            level.removeBlock(movedHead.above(), false);
+            level.removeBlock(movedHead, false);
+            test.assertTrue(level.getBlockState(anchor).isAir() && level.getBlockState(movedHead).isAir(),
+                    "Removing the raised head orphaned the control");
+            System.out.println("CATENARY_RAIL_AIM " + section + " placement, menu, terminal picking and cleanup passed");
+        }
+
+        private UseOnContext terminalContext(net.minecraft.world.entity.player.Player player, BlockPos head, Vec3 contact) {
+            var hit = level.clip(new ClipContext(contact.add(0, 1, 0), contact.add(0, -0.5, 0),
+                    ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+            test.assertTrue(hit.getBlockPos().equals(head), "Normal ray picking missed the hanger terminal at " + head);
+            return new UseOnContext(player, InteractionHand.MAIN_HAND, hit);
+        }
+
+        private void verifyHangerAlignment(String section, CatenaryHangerBlockEntity hanger) {
+            var fixture = hanger.fixture();
+            var railDirection = fixture.contactSpacing().cross(new Vec3(0, 1, 0)).normalize();
+            var offset = fixture.housing().subtract(fixture.wireCenter());
+            var first = new BlockWireEndpoint(hanger.getBlockPos(), 0).getExactPosition(level);
+            var second = new BlockWireEndpoint(hanger.getBlockPos(), 1).getExactPosition(level);
+            double square = Math.abs(railDirection.dot(second.subtract(first).normalize()));
+            test.assertTrue(square < 1e-3, "The feeder terminals were out of square with the ceramic mounts over the " + section);
+            var head = hanger.headPosition();
+            var electric = IElectric.getAt(level, head);
+            for (int i = 0; i < 2; i++) {
+                var post = (TerminalBoundingBox) electric.terminal(level.getBlockState(head), i);
+                var outline = post.getOutline();
+                test.assertTrue(outline.minX >= 0 && outline.maxX < 1 && outline.minZ >= 0 && outline.maxZ < 1,
+                        "The adjusted feeder terminal extends outside its selectable block over the " + section);
+            }
+            System.out.printf(Locale.ROOT, "CATENARY_SQUARE %s foreAft=%.5f across=%.5f angleError=%.5f%n",
+                    section, offset.dot(railDirection), offset.dot(fixture.contactSpacing().normalize()), square);
         }
 
         private void energize(org.patryk3211.powergrid.electricity.WorldNetworks grid, BlockPos feeder, int voltage) {
@@ -383,29 +554,17 @@ public final class RailJumperGameTest {
         }
 
         private void verifyHangerJoints() {
-            var incoming = spanAt(hangers.get(1));
             for (int i = 2; i < hangers.size(); i++) {
                 var joint = hangers.get(i - 1);
-                var next = hangers.get(i);
-                var outgoing = spanAt(next);
-                var a = incoming.getCompound(incoming.size() - 1);
-                var b = outgoing.getCompound(0);
-                var centerA = Vec3.atLowerCornerOf(joint).add(a.getDouble("X"), a.getDouble("Y"), a.getDouble("Z"));
-                var centerB = Vec3.atLowerCornerOf(next).add(b.getDouble("X"), b.getDouble("Y"), b.getDouble("Z"));
-                var acrossA = new Vec3(a.getDouble("AcrossX"), 0, a.getDouble("AcrossZ"));
-                var acrossB = new Vec3(b.getDouble("AcrossX"), 0, b.getDouble("AcrossZ"));
-                test.assertTrue(centerA.distanceToSqr(centerB) < 1e-6 && acrossA.distanceToSqr(acrossB) < 1e-6,
+                var hanger = (CatenaryHangerBlockEntity) level.getBlockEntity(joint);
+                var ends = hanger.overheadWireEnds();
+                test.assertTrue(ends.size() == 4 && ends.get(0).distanceToSqr(ends.get(2)) < 1e-6
+                                && ends.get(1).distanceToSqr(ends.get(3)) < 1e-6,
                         "The two wire pairs do not meet at " + joint);
-                incoming = outgoing;
             }
+            verifyHangerAlignment("linked curve", (CatenaryHangerBlockEntity) level.getBlockEntity(hangers.get(2)));
+            verifyHangerAlignment("linked incline", (CatenaryHangerBlockEntity) level.getBlockEntity(hangers.get(4)));
             System.out.println("CATENARY_SUPPORTS wire joints meet at the curve and grade hangers");
-        }
-
-        private ListTag spanAt(BlockPos pos) {
-            var hanger = (CatenaryHangerBlockEntity) level.getBlockEntity(pos);
-            var points = hanger.getUpdateTag(level.registryAccess()).getList("Span", Tag.TAG_COMPOUND);
-            test.assertTrue(points.size() > 1, "Missing catenary span at " + pos);
-            return points;
         }
 
         void tick() {

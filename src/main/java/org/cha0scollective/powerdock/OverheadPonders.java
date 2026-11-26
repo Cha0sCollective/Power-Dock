@@ -28,17 +28,15 @@ final class OverheadPonders {
         scene.setSceneOffsetY(-1.1f);
         scene.world().showSection(util.select().fromTo(1, 1, 5, 9, 1, 5), Direction.DOWN);
         explain(scene, new Vec3(2.5, 1.5, 5.5),
-                "Place a hanger directly above the rail. It can also sit partway through a curve or climb.", 90);
+                "Aim at the rail and right-click with a hanger to place it overhead. You can also aim at a curve or climb.", 90);
         showHanger(scene, util, FIRST_HANGER, 0, 7);
         showHanger(scene, util, LAST_HANGER, 0, 7);
         showWires(scene, head(FIRST_HANGER, 0), head(LAST_HANGER, 0));
         explain(scene, head(FIRST_HANGER, 0).center(),
                 "The hanger lines up across the track as you place it. Add hangers along bends and climbs to support both wires.", 100);
-        var target = FIRST_HANGER.getCenter();
-        scene.overlay().showControls(target, Pointing.DOWN, 38).rightClick();
-        explain(scene, target, "Right-click with an empty hand to change the width. The default opening is 7 blocks wide.", 90);
+        var target = FIRST_HANGER.below(7).getCenter();
         scene.overlay().showControls(target, Pointing.DOWN, 38).rightClick().whileSneaking();
-        explain(scene, target, "Sneak-right-click with an empty hand to set the wire height. Leave room for the train and the roof pickup.", 95);
+        explain(scene, target, "Sneak-right-click the rail with an empty hand to set the hanger height and width.", 95);
         scene.markAsFinished();
     }
 
@@ -58,10 +56,10 @@ final class OverheadPonders {
         var last = head(LAST_HANGER, 0);
         scene.overlay().showLine(PonderPalette.OUTPUT, first.supply(), last.supply(), 98);
         scene.overlay().showLine(PonderPalette.INPUT, first.returnWire(), last.returnWire(), 98);
-        explain(scene, LAST_HANGER.getCenter(), "Sneak-right-click the next hanger to preview both paths. Sneak-right-click it again to confirm.", 90);
+        explain(scene, LAST_HANGER.getCenter(), "Sneak-right-click the next hanger to preview the wires. Click it again to confirm, or sneak-right-click in the air to cancel.", 105);
         showWires(scene, first, last);
         scene.effects().indicateSuccess(LAST_HANGER);
-        explain(scene, LAST_HANGER.getCenter(), "Start the next span from this hanger. On a branch, use closer hangers to make the route clear.", 95);
+        explain(scene, LAST_HANGER.getCenter(), "Extend the line from either end. A feeder can supply spans in both directions.", 95);
         scene.overlay().showControls(FIRST_HANGER.getCenter(), Pointing.DOWN, 40).rightClick().withItem(wire);
         explain(scene, FIRST_HANGER.getCenter(), "Use normal right-clicks on the first hanger's copper posts to wire the section into Power Grid.", 94);
         explain(scene, LAST_HANGER.getCenter(), "To remove spans at a hanger, sneak-right-click it three times with Copper Wire and follow the prompt.", 90);
@@ -130,8 +128,9 @@ final class OverheadPonders {
 
     private static void showHanger(SceneBuilder scene, SceneBuildingUtil util, BlockPos pos, double heightOffset, int width) {
         scene.world().showSection(util.select().position(pos), Direction.DOWN);
-        geometry(scene, (level, beams) -> CatenaryRenderer.drawFixture(beams, head(pos, heightOffset).center(),
-                ACROSS, pos.getY(), width, 7));
+        var wires = head(pos, heightOffset).center();
+        var fixture = new HangerFixture(wires, ACROSS, Vec3.atBottomCenterOf(pos), wires.y - 7, width);
+        geometry(scene, (level, beams) -> CatenaryRenderer.drawFixture(beams, fixture));
     }
 
     private static void showWires(SceneBuilder scene, CatenarySpan.Head from, CatenarySpan.Head to) {

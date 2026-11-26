@@ -4,54 +4,75 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.event.level.LevelEvent;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
-@EventBusSubscriber(modid = PowerDock.ID)
 final class CatenarySpan {
     static final double HALF_SPACING = 0.5;
     static final double SIDE_TRAVEL = 1.25;
     static final double MIN_RISE = 0.75;
     static final double MAX_RISE = 5.5;
-    private static final Map<Level, ClientSpans> CLIENT_SPANS = new IdentityHashMap<>();
     private final BlockPos end;
     final List<Head> points;
     final AABB renderBounds;
+    final boolean crossoverAtStart;
+    final boolean crossoverAtEnd;
     private final List<Segment> segments = new ArrayList<>();
+    private final double[] distance;
+    private final double[] supplyDistance;
+    private final double[] returnDistance;
+    private final Set<Long> chunks = new HashSet<>();
 
     private CatenarySpan(BlockPos end, List<Head> points) {
+        this(end, points, false, false);
+    }
+
+    private CatenarySpan(BlockPos end, List<Head> points, boolean crossoverAtStart, boolean crossoverAtEnd) {
         this.end = end;
         this.points = points;
-        var bounds = new AABB(end);
+        this.crossoverAtStart = crossoverAtStart;
+        this.crossoverAtEnd = crossoverAtEnd;
+        distance = new double[points.size()];
+        supplyDistance = new double[points.size()];
+        returnDistance = new double[points.size()];
+        var start = points.getFirst().center();
+        var bounds = new AABB(start.x, start.y, start.z, start.x, start.y, start.z);
         for (var point : points) {
             var center = point.center();
             bounds = bounds.minmax(new AABB(center.x, center.y, center.z, center.x, center.y, center.z));
         }
-        renderBounds = bounds.inflate(8, 16, 8);
-        for (int i = 1; i < points.size(); i++) segments.add(new Segment(end, points.get(i - 1), points.get(i)));
+        renderBounds = bounds.inflate(HALF_SPACING + 0.125, 0.5, HALF_SPACING + 0.125);
+        for (int i = 1; i < points.size(); i++) {
+            var first = points.get(i - 1);
+            var last = points.get(i);
+            distance[i] = distance[i - 1] + first.center.distanceTo(last.center);
+            supplyDistance[i] = supplyDistance[i - 1] + first.supply().distanceTo(last.supply());
+            returnDistance[i] = returnDistance[i - 1] + first.returnWire().distanceTo(last.returnWire());
+            var segment = new Segment(this, i - 1, first, last);
+            segments.add(segment);
+            segment.forCells(chunks::add);
+        }
     }
 
-    @SubscribeEvent
-    public static void unload(LevelEvent.Unload event) {
-        if (event.getLevel() instanceof Level level && level.isClientSide) CLIENT_SPANS.remove(level);
-    }
+    BlockPos origin() { return end; }
+    Set<Long> chunks() { return chunks; }
 
     static CatenarySpan create(BlockPos end, CatenaryRoute.Route path, int startHeight, int endHeight) {
-        var route = path.points();
+        return create(end, path.points(), path.direction(true), path.direction(false), startHeight, endHeight);
+    }
+
+    static CatenarySpan create(BlockPos end, List<Vec3> route, Vec3 startDirection, Vec3 endDirection,
+                               int startHeight, int endHeight) {
         var points = new ArrayList<Head>(route.size());
         double total = 0;
         for (int i = 1; i < route.size(); i++) total += route.get(i).distanceTo(route.get(i - 1));
@@ -61,35 +82,40 @@ final class CatenarySpan {
             double t = walked / total;
             double height = startHeight + (endHeight - startHeight) * t * t * (3 - 2 * t);
             Vec3 tangent;
-            if (i == 0) tangent = path.direction(true);
-            else if (i == route.size() - 1) tangent = path.direction(false);
+            if (i == 0) tangent = startDirection;
+            else if (i == route.size() - 1) tangent = endDirection;
             else tangent = route.get(i + 1).subtract(route.get(i - 1));
             points.add(Head.along(route.get(i).add(0, height, 0), tangent));
         }
         return new CatenarySpan(end, List.copyOf(points));
     }
 
-    void registerClient(Level level, BlockPos feeder) {
-        var client = CLIENT_SPANS.computeIfAbsent(level, unused -> new ClientSpans(new Index(), new HashMap<>()));
-        client.index.add(this);
-        client.feeders.put(end, feeder);
+    CatenarySpan flipped() {
+        return new CatenarySpan(end, points.stream().map(head -> new Head(head.center, head.across.reverse())).toList());
     }
 
-    void unregisterClient(Level level) {
-        var client = CLIENT_SPANS.get(level);
-        if (client == null) return;
-        client.index.remove(this);
-        client.feeders.remove(end);
-        if (client.feeders.isEmpty()) CLIENT_SPANS.remove(level);
+    CatenarySpan join(Vec3 first, Vec3 last) {
+        var joined = new ArrayList<>(points);
+        joined.set(0, join(points.getFirst(), first));
+        joined.set(points.size() - 1, join(points.getLast(), last));
+        return new CatenarySpan(end, List.copyOf(joined), points.getFirst().across.dot(first) < 0,
+                points.getLast().across.dot(last) < 0);
     }
 
-    @Nullable
-    static Contact nearestClient(Level level, Vec3 base) {
-        var client = CLIENT_SPANS.get(level);
-        return client == null ? null : client.index.nearest(base, client.feeders::get);
+    private static Head join(Head head, Vec3 contactAcross) {
+        return new Head(head.center, head.across.dot(contactAcross) < 0 ? contactAcross.reverse() : contactAcross);
     }
 
-    private record ClientSpans(Index index, Map<BlockPos, BlockPos> feeders) {}
+    Distance length() {
+        int last = points.size() - 1;
+        return new Distance(distance[last], supplyDistance[last], returnDistance[last]);
+    }
+
+    private Distance at(int segment, double t) {
+        return new Distance(distance[segment] + t * (distance[segment + 1] - distance[segment]),
+                supplyDistance[segment] + t * (supplyDistance[segment + 1] - supplyDistance[segment]),
+                returnDistance[segment] + t * (returnDistance[segment + 1] - returnDistance[segment]));
+    }
 
     static final class Index {
         private final Map<Long, Set<Segment>> cells = new HashMap<>();
@@ -110,21 +136,40 @@ final class CatenarySpan {
         }
 
         @Nullable
-        Contact nearest(Vec3 base, Function<BlockPos, BlockPos> feederAt) {
+        <K> Contact nearestRun(Vec3 base, Function<CatenarySpan, K> sectionAt, @Nullable CatenarySpan previous) {
+            return nearestRun(base, sectionAt, previous, span -> false);
+        }
+
+        @Nullable
+        <K> Contact nearestRun(Vec3 base, Function<CatenarySpan, K> sectionAt, @Nullable CatenarySpan previous,
+                               Predicate<CatenarySpan> occupied) {
             var entries = cells.get(new ChunkPos(BlockPos.containing(base)).toLong());
             if (entries == null) return null;
             Contact best = null;
+            K section = null;
             boolean tiedSection = false;
+            boolean bestOccupied = false;
             for (var segment : entries) {
                 var sample = segment.sample(base);
                 if (sample == null || best != null && sample.score > best.score + 1e-6) continue;
-                var feeder = feederAt.apply(segment.end);
-                if (feeder == null) continue;
+                var candidateSection = sectionAt.apply(segment.span);
+                if (candidateSection == null) continue;
+                boolean onTrack = occupied.test(segment.span);
                 if (best != null && Math.abs(sample.score - best.score) < 1e-6) {
-                    if (!feeder.equals(best.feeder)) tiedSection = true;
+                    if (onTrack && !bestOccupied) {
+                        section = candidateSection;
+                        best = new Contact(segment.span, sample.head, sample.at, sample.score);
+                        bestOccupied = true;
+                        tiedSection = false;
+                    } else if (onTrack == bestOccupied) {
+                        if (!candidateSection.equals(section)) tiedSection = true;
+                        else if (segment.span == previous) best = new Contact(segment.span, sample.head, sample.at, sample.score);
+                    }
                     continue;
                 }
-                best = new Contact(feeder, sample.head, sample.score);
+                best = new Contact(segment.span, sample.head, sample.at, sample.score);
+                section = candidateSection;
+                bestOccupied = onTrack;
                 tiedSection = false;
             }
             return tiedSection ? null : best;
@@ -134,16 +179,9 @@ final class CatenarySpan {
     ListTag write() {
         var data = new ListTag();
         var origin = Vec3.atLowerCornerOf(end);
-        for (var point : points) {
-            var local = point.center.subtract(origin);
-            var entry = new CompoundTag();
-            entry.putDouble("X", local.x);
-            entry.putDouble("Y", local.y);
-            entry.putDouble("Z", local.z);
-            entry.putDouble("AcrossX", point.across.x);
-            entry.putDouble("AcrossZ", point.across.z);
-            data.add(entry);
-        }
+        for (var point : points) data.add(point.write(origin));
+        if (crossoverAtStart) data.getCompound(0).putBoolean("Crossover", true);
+        if (crossoverAtEnd) data.getCompound(data.size() - 1).putBoolean("Crossover", true);
         return data;
     }
 
@@ -153,14 +191,12 @@ final class CatenarySpan {
         var origin = Vec3.atLowerCornerOf(end);
         var points = new ArrayList<Head>();
         for (int i = 0; i < entries.size(); i++) {
-            var entry = entries.getCompound(i);
-            var pos = origin.add(entry.getDouble("X"), entry.getDouble("Y"), entry.getDouble("Z"));
-            var across = new Vec3(entry.getDouble("AcrossX"), 0, entry.getDouble("AcrossZ"));
-            if (!Double.isFinite(pos.lengthSqr()) || !Double.isFinite(across.lengthSqr())
-                    || pos.distanceToSqr(origin) > 96 * 96 || across.lengthSqr() > 1) return null;
-            points.add(new Head(pos, across));
+            var head = Head.read(origin, entries.getCompound(i));
+            if (head == null) return null;
+            points.add(head);
         }
-        return new CatenarySpan(end, List.copyOf(points));
+        return new CatenarySpan(end, List.copyOf(points), entries.getCompound(0).getBoolean("Crossover"),
+                entries.getCompound(entries.size() - 1).getBoolean("Crossover"));
     }
 
     record Head(Vec3 center, Vec3 across) {
@@ -171,12 +207,43 @@ final class CatenarySpan {
 
         Vec3 supply() { return center.add(across); }
         Vec3 returnWire() { return center.subtract(across); }
+
+        CompoundTag write(Vec3 origin) {
+            var local = center.subtract(origin);
+            var entry = new CompoundTag();
+            entry.putDouble("X", local.x);
+            entry.putDouble("Y", local.y);
+            entry.putDouble("Z", local.z);
+            entry.putDouble("AcrossX", across.x);
+            entry.putDouble("AcrossZ", across.z);
+            return entry;
+        }
+
+        @Nullable static Head read(Vec3 origin, CompoundTag entry) {
+            var pos = origin.add(entry.getDouble("X"), entry.getDouble("Y"), entry.getDouble("Z"));
+            var across = new Vec3(entry.getDouble("AcrossX"), 0, entry.getDouble("AcrossZ"));
+            if (!Double.isFinite(pos.lengthSqr()) || !Double.isFinite(across.lengthSqr())
+                    || pos.distanceToSqr(origin) > 96 * 96 || across.lengthSqr() > 1) return null;
+            return new Head(pos, across);
+        }
     }
 
-    record Contact(BlockPos feeder, Head head, double score) {}
-    private record Sample(Head head, double score) {}
+    record Distance(double center, double supply, double returnWire) {
+        static final Distance ZERO = new Distance(0, 0, 0);
 
-    private record Segment(BlockPos end, Head first, Head second) {
+        Distance plus(Distance other) {
+            return new Distance(center + other.center, supply + other.supply, returnWire + other.returnWire);
+        }
+
+        Distance minus(Distance other) {
+            return new Distance(center - other.center, supply - other.supply, returnWire - other.returnWire);
+        }
+    }
+
+    record Contact(CatenarySpan span, Head head, Distance at, double score) {}
+    private record Sample(Head head, Distance at, double score) {}
+
+    private record Segment(CatenarySpan span, int number, Head first, Head second) {
         void forCells(java.util.function.LongConsumer handle) {
             var a = first.center;
             var b = second.center;
@@ -196,13 +263,15 @@ final class CatenarySpan {
             if (length < 1e-8) return null;
             double t = ((base.x - a.x) * x + (base.z - a.z) * z) / length;
             if (t < -1e-6 || t > 1 + 1e-6) return null;
-            var center = a.lerp(b, Math.clamp(t, 0, 1));
+            t = Math.clamp(t, 0, 1);
+            var center = a.lerp(b, t);
             double rise = center.y - base.y;
             if (rise < MIN_RISE || rise > MAX_RISE) return null;
             double dx = base.x - center.x, dz = base.z - center.z;
             double lateral = dx * dx + dz * dz;
             if (lateral > SIDE_TRAVEL * SIDE_TRAVEL) return null;
-            return new Sample(new Head(center, first.across.lerp(second.across, t)), lateral + rise * rise * 0.01);
+            return new Sample(new Head(center, first.across.lerp(second.across, t)), span.at(number, t),
+                    lateral + rise * rise * 0.01);
         }
     }
 }

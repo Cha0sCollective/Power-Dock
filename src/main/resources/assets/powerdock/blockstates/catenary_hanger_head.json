@@ -1,0 +1,5 @@
+{
+  "multipart": [
+    { "apply": { "model": "powerdock:block/catenary_hanger" } }
+  ]
+}

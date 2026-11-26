@@ -9,6 +9,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import org.patryk3211.powergrid.electricity.base.TerminalBoundingBox;
 
 final class HangerMount {
+    private static final double TERMINAL_INSET = 1.0 / 128;
     final Vec3 rail;
     final double yaw;
     final Vec3 housing;
@@ -48,28 +49,38 @@ final class HangerMount {
 
     private Vec3 housingOnCrossbeam() {
         var center = new Vec3(rail.x, 0, rail.z);
-        if (postsFit(center)) return center;
-        // Slide along the beam when the rail center is near a block boundary. Both
-        // posts must stay in the placed cell so vanilla ray picking can reach them.
-        var blockCenter = new Vec3(0.5, 0, 0.5);
-        var nearest = center.add(across.scale(blockCenter.subtract(center).dot(across)));
-        if (!postsFit(nearest)) return blockCenter;
-        var outside = center;
-        var inside = nearest;
-        for (int i = 0; i < 12; i++) {
-            var middle = outside.lerp(inside, 0.5);
-            if (postsFit(middle)) inside = middle;
-            else outside = middle;
+        var positive = bounds(CatenaryBlock.post(Direction.NORTH, 0).getShape().bounds(), Vec3.ZERO);
+        var negative = bounds(CatenaryBlock.post(Direction.NORTH, 1).getShape().bounds(), Vec3.ZERO);
+        var posts = positive.minmax(negative);
+        var fitX = new Range(TERMINAL_INSET - posts.minX, 1 - TERMINAL_INSET - posts.maxX);
+        var fitZ = new Range(TERMINAL_INSET - posts.minZ, 1 - TERMINAL_INSET - posts.maxZ);
+
+        // Keep both posts in the selectable cell while moving the box the least distance along the crossbeam.
+        var slideX = fitX.slideFrom(center.x, across.x);
+        var slideZ = fitZ.slideFrom(center.z, across.z);
+        double low = Math.max(slideX.min, slideZ.min);
+        double high = Math.min(slideX.max, slideZ.max);
+        if (low <= high) {
+            return center.add(across.scale(Math.clamp(0, low, high)));
         }
-        return inside;
+
+        // At the edge of a cell, the beam can miss the entire area where both terminals fit.
+        return new Vec3(fitX.clamp(center.x), 0, fitZ.clamp(center.z));
     }
 
-    private boolean postsFit(Vec3 center) {
-        for (int i = 0; i < posts.length; i++) {
-            var box = bounds(CatenaryBlock.post(Direction.NORTH, i).getOutline(), center);
-            if (box.minX < 0.01 || box.maxX > 0.99 || box.minZ < 0.01 || box.maxZ > 0.99) return false;
+    private record Range(double min, double max) {
+        Range slideFrom(double position, double direction) {
+            if (Math.abs(direction) < 1e-8) {
+                return position >= min && position <= max
+                        ? new Range(Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY)
+                        : new Range(Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY);
+            }
+            double first = (min - position) / direction;
+            double second = (max - position) / direction;
+            return new Range(Math.min(first, second), Math.max(first, second));
         }
-        return true;
+
+        double clamp(double position) { return Math.clamp(position, min, max); }
     }
 
     private AABB bounds(AABB box, Vec3 center) {

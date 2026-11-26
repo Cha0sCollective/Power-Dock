@@ -5,10 +5,13 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import dev.ryanhcode.sable.companion.SableCompanion;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.Sheets;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.AABB;
@@ -17,6 +20,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import org.joml.Vector3d;
 import org.joml.Vector3f;
@@ -29,6 +33,7 @@ final class CatenaryRenderer {
     private static final RenderType SOLID =
             RenderType.entityCutoutNoCull(ResourceLocation.fromNamespaceAndPath(PowerDock.ID, "textures/block/catenary_solid.png"));
     private static final int COPPER = 0xFFA76548;
+    private static final int INSULATED_COPPER = 0xFF42423F;
     private static final int METAL = 0xFF485650;
     private static final int STEEL = 0xFF65736D;
     private static final int CARBON = 0xFF2C3332;
@@ -41,31 +46,19 @@ final class CatenaryRenderer {
     }
 
     private static final class Hanger implements BlockEntityRenderer<CatenaryHangerBlockEntity> {
-        private final Map<CatenarySpan, WireMesh> wireMeshes = new WeakHashMap<>();
-
         @Override
         public void render(CatenaryHangerBlockEntity hanger, float partialTick, PoseStack pose,
                            MultiBufferSource buffers, int light, int overlay) {
-            var origin = Vec3.atLowerCornerOf(hanger.getBlockPos());
             var out = beams(pose, buffers, light, overlay);
-            var span = hanger.span();
-            if (span != null) {
-                var mesh = wireMeshes.get(span);
-                if (mesh == null) {
-                    mesh = WireMesh.build(span, origin);
-                    wireMeshes.put(span, mesh);
-                }
-                mesh.render(out);
-            }
-            var frame = hanger.fixtureHead();
-            if (frame != null) drawFixture(out, frame.center().subtract(origin), frame.across(), 0,
-                    hanger.width(), hanger.height());
+            var fixture = hanger.fixture();
+            if (fixture != null) drawFixture(out, fixture);
             var mount = hanger.mount();
             if (mount != null && hanger.getBlockState().getValue(CatenaryBlock.TRACK_ALIGNED)) {
                 var renderer = Minecraft.getInstance().getBlockRenderer();
                 var state = PowerDock.CATENARY_HANGER.get().defaultBlockState();
+                var housing = fixture.housing();
                 pose.pushPose();
-                pose.translate(mount.housing.x, mount.housing.y, mount.housing.z);
+                pose.translate(housing.x, housing.y, housing.z);
                 pose.mulPose(Axis.YP.rotation((float) mount.yaw));
                 pose.translate(-0.5, 0, -0.5);
                 renderer.getModelRenderer().renderModel(pose.last(), buffers.getBuffer(Sheets.solidBlockSheet()),
@@ -77,15 +70,36 @@ final class CatenaryRenderer {
         @Override public int getViewDistance() { return 96; }
 
         @Override
-        public boolean shouldRenderOffScreen(CatenaryHangerBlockEntity hanger) {
-            // A wire can cross the camera view while its owning hanger is outside it.
-            return true;
-        }
-
-        @Override
         public AABB getRenderBoundingBox(CatenaryHangerBlockEntity hanger) {
-            var span = hanger.span();
-            return span != null ? span.renderBounds : new AABB(hanger.getBlockPos()).inflate(8, 16, 8);
+            return new AABB(hanger.getBlockPos()).inflate(8, 16, 8);
+        }
+    }
+
+    @EventBusSubscriber(modid = PowerDock.ID, value = Dist.CLIENT)
+    static final class OverheadWires {
+        private static final Map<CatenarySpan, WireMesh> MESHES = new WeakHashMap<>();
+
+        @SubscribeEvent
+        public static void render(RenderLevelStageEvent event) {
+            if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) return;
+            var game = Minecraft.getInstance();
+            var level = game.level;
+            if (level == null) return;
+            var camera = event.getCamera().getPosition();
+            var pose = event.getPoseStack();
+            var buffers = game.renderBuffers().bufferSource();
+            for (var span : CatenaryWireSync.visible(level)) {
+                if (!event.getFrustum().isVisible(span.renderBounds)) continue;
+                var origin = Vec3.atLowerCornerOf(span.origin());
+                var offset = origin.subtract(camera);
+                pose.pushPose();
+                pose.translate(offset.x, offset.y, offset.z);
+                var lightPos = BlockPos.containing(span.points.get(span.points.size() / 2).center());
+                int light = LevelRenderer.getLightColor(level, lightPos);
+                MESHES.computeIfAbsent(span, wire -> WireMesh.build(wire, origin))
+                        .render(beams(pose, buffers, light, OverlayTexture.NO_OVERLAY));
+                pose.popPose();
+            }
         }
     }
 
@@ -93,23 +107,19 @@ final class CatenaryRenderer {
         return new Beams(buffers.getBuffer(SOLID), pose.last(), light, overlay);
     }
 
-    static void drawFixture(Beams out, Vec3 head, Vec3 contactSpacing, double housingY,
-                            int clearanceWidth, int clearanceHeight) {
-        var across = contactSpacing.normalize();
-        var width = across.scale(clearanceWidth * 0.5 + 0.125);
-        double beamY = housingY + 0.609375;
-        // On an incline the conductors can reach the height of the top mount.
-        // In that case the beam passes through the base and the insulators sit above it.
-        if (Math.abs(head.y - beamY) < 0.1875) beamY = housingY + 0.125;
-        var beam = new Vec3(head.x, beamY, head.z);
+    static void drawFixture(Beams out, HangerFixture fixture) {
+        var beam = fixture.crossbeamCenter();
+        var width = fixture.mastOffset();
         out.beam(beam.subtract(width), beam.add(width), 0.125, METAL);
+        var housing = fixture.housingJoint(beam);
+        var attachment = new Vec3(housing.x, beam.y, housing.z);
+        out.beam(housing, attachment, 0.09375, STEEL);
+        out.beam(attachment, fixture.beamJoint(beam), 0.09375, STEEL);
 
-        double ground = head.y - clearanceHeight;
         for (int side = -1; side <= 1; side += 2) {
             var mast = beam.add(width.scale(side));
-            out.beam(mast, new Vec3(mast.x, ground, mast.z), 0.125, METAL);
-            var wire = head.add(contactSpacing.scale(side));
-            out.beam(wire, new Vec3(wire.x, beam.y, wire.z), 0.0625, CERAMIC);
+            out.beam(mast, new Vec3(mast.x, fixture.railY(), mast.z), 0.125, METAL);
+            out.beam(fixture.insulatorBottom(side), fixture.insulatorTop(beam, side), 0.0625, CERAMIC);
         }
     }
 
@@ -129,7 +139,7 @@ final class CatenaryRenderer {
             if (body != null && raised) {
                 var bodyPose = body.renderPose(partialTick);
                 var world = bodyPose.transformPosition(pickup.base());
-                var contact = CatenarySpan.nearestClient(level, world);
+                var contact = CatenaryWireSync.nearest(level, world);
                 if (contact != null) {
                     var left = inverse(bodyPose, contact.head().supply()).subtract(pos);
                     var right = inverse(bodyPose, contact.head().returnWire()).subtract(pos);
@@ -186,25 +196,51 @@ final class CatenaryRenderer {
 
     private static final class WireMesh {
         private final float[] data;
+        private final int[] colors;
         private int used;
 
         private WireMesh(int segments) {
             // Two wires, four faces per segment, one normal and four vertices per face.
             data = new float[segments * 2 * 4 * 15];
+            colors = new int[segments * 2 * 4];
         }
 
         static WireMesh build(CatenarySpan span, Vec3 origin) {
-            var mesh = new WireMesh(span.points.size() - 1);
+            var mesh = new WireMesh(span.points.size() - 1 + 3 * ((span.crossoverAtStart ? 1 : 0) + (span.crossoverAtEnd ? 1 : 0)));
             for (int i = 1; i < span.points.size(); i++) {
                 var a = span.points.get(i - 1);
                 var b = span.points.get(i);
-                beamFaces(a.supply().subtract(origin), b.supply().subtract(origin), 0.03125, mesh::face);
-                beamFaces(a.returnWire().subtract(origin), b.returnWire().subtract(origin), 0.03125, mesh::face);
+                var first = i == 1 && span.crossoverAtStart ? mesh.crossover(a, b, origin) : a;
+                var last = i == span.points.size() - 1 && span.crossoverAtEnd ? mesh.crossover(b, a, origin) : b;
+                mesh.wire(first.supply().subtract(origin), last.supply().subtract(origin), COPPER);
+                mesh.wire(first.returnWire().subtract(origin), last.returnWire().subtract(origin), COPPER);
             }
             return mesh;
         }
 
-        private void face(Vec3 normal, Vec3 first, Vec3 second, Vec3 third, Vec3 fourth) {
+        private CatenarySpan.Head crossover(CatenarySpan.Head joint, CatenarySpan.Head neighbour, Vec3 origin) {
+            var travel = neighbour.center().subtract(joint.center());
+            var near = joint.center().add(travel.normalize().scale(Math.min(0.125, travel.length() / 3)));
+            var trim = new CatenarySpan.Head(near, joint.across());
+            bridge(trim.supply().subtract(origin), joint.returnWire().subtract(origin), 0.22);
+            bridge(trim.returnWire().subtract(origin), joint.supply().subtract(origin), 0.34);
+            return trim;
+        }
+
+        private void bridge(Vec3 from, Vec3 to, double clearance) {
+            var highFrom = from.add(0, clearance, 0);
+            var highTo = to.add(0, clearance, 0);
+            wire(from, highFrom, INSULATED_COPPER);
+            wire(highFrom, highTo, INSULATED_COPPER);
+            wire(highTo, to, INSULATED_COPPER);
+        }
+
+        private void wire(Vec3 from, Vec3 to, int color) {
+            beamFaces(from, to, 0.03125, (normal, a, b, c, d) -> face(normal, a, b, c, d, color));
+        }
+
+        private void face(Vec3 normal, Vec3 first, Vec3 second, Vec3 third, Vec3 fourth, int color) {
+            colors[used / 15] = color;
             vector(normal);
             vector(first);
             vector(second);
@@ -222,7 +258,7 @@ final class CatenaryRenderer {
             for (int offset = 0; offset < used; offset += 15) {
                 out.normal(data[offset], data[offset + 1], data[offset + 2]);
                 for (int i = offset + 3; i < offset + 15; i += 3) {
-                    out.vertex(data[i], data[i + 1], data[i + 2], COPPER);
+                    out.vertex(data[i], data[i + 1], data[i + 2], colors[offset / 15]);
                 }
             }
         }

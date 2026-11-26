@@ -54,6 +54,7 @@ public final class CatenaryTrackIndex {
         if (server == null || !server.isSameThread()) return;
         revision++;
         for (var index : LEVELS.values()) index.dirty.add(graph.id);
+        CatenaryLines.trackChanged(graph);
     }
 
     static long revision() { return revision; }
@@ -66,6 +67,10 @@ public final class CatenaryTrackIndex {
 
     static List<Curve> curvesBelow(ServerLevel level, Vec3 column) {
         return current(level).curves.find(new AABB(column.x, column.y - 16, column.z, column.x, column.y, column.z));
+    }
+
+    static List<Curve> curvesNear(ServerLevel level, AABB bounds) {
+        return current(level).curves.find(bounds);
     }
 
     @Nullable

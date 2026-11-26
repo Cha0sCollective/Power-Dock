@@ -19,6 +19,7 @@ import net.minecraft.world.phys.Vec3;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
@@ -26,8 +27,11 @@ import java.util.Set;
 final class CatenaryRoute {
     static final int MAX_LENGTH = 64;
     private static final int MAX_EDGES = 128;
-    private static final double EPSILON = 1e-5;
+    static final double EPSILON = 1e-5;
     private static final double SNAP_DISTANCE = 0.75;
+    private static final Comparator<TrackNodeLocation> NODE_ORDER = Comparator.comparingInt(TrackNodeLocation::getX)
+            .thenComparingInt(TrackNodeLocation::getY).thenComparingInt(TrackNodeLocation::getZ)
+            .thenComparingInt(node -> node.yOffsetPixels);
 
     private CatenaryRoute() {}
 
@@ -43,20 +47,34 @@ final class CatenaryRoute {
 
     @Nullable
     static Route betweenHangers(ServerLevel level, BlockPos from, BlockPos to) {
+        return choose(level, from, to, List.of()).route;
+    }
+
+    static Choice choose(ServerLevel level, BlockPos from, BlockPos to, List<BlockPos> waypoints) {
         if (horizontalDistanceSqr(Vec3.atCenterOf(from), Vec3.atCenterOf(to))
-                > (MAX_LENGTH + 2 * SNAP_DISTANCE) * (MAX_LENGTH + 2 * SNAP_DISTANCE)) return null;
+                > (MAX_LENGTH + 2 * SNAP_DISTANCE) * (MAX_LENGTH + 2 * SNAP_DISTANCE)) return new Choice(null, false);
         var targets = locationsBelow(level, to);
+        var stops = waypoints.stream().map(pos -> waypointLocations(level, pos)).toList();
+        if (stops.stream().anyMatch(List::isEmpty)) return new Choice(null, false);
         Route chosen = null;
         for (var start : locationsBelow(level, from)) {
-            var search = new Search(start.graph, targets);
-            search.walk(start.edge, start.distance, 0, new ArrayList<>());
-            if (search.exhausted || search.results.size() > 1) return null;
+            var search = new Search(start.graph, targets, stops);
+            search.walk(start.edge, start.distance, 0, 0, new ArrayList<>());
+            if (search.exhausted || search.results.size() > 1) return new Choice(null, true);
             if (search.results.isEmpty()) continue;
             var route = search.results.getFirst();
-            if (chosen != null && !chosen.points.equals(route.points)) return null;
+            if (chosen != null && !chosen.trackPath().equals(route.trackPath())) return new Choice(null, true);
             chosen = route;
         }
-        return chosen;
+        return new Choice(chosen, false);
+    }
+
+    record Choice(@Nullable Route route, boolean needsWaypoint) {}
+
+    private static List<Location> waypointLocations(ServerLevel level, BlockPos rail) {
+        if (!level.hasChunkAt(rail)) return List.of();
+        if (level.getBlockState(rail).getBlock() instanceof ITrackBlock) return locations(level, rail);
+        return locationsBelow(level, rail.above(2));
     }
 
     private static List<Location> locationsBelow(ServerLevel level, BlockPos hanger) {
@@ -170,6 +188,16 @@ final class CatenaryRoute {
     }
 
     record Route(TrackGraph graph, List<Part> parts, List<Vec3> points) {
+        List<Interval> trackPath() {
+            return parts.stream().filter(part -> part.to - part.from > EPSILON).map(Part::interval).toList();
+        }
+
+        boolean sameTrack(Route other) {
+            var path = trackPath();
+            var second = other.trackPath();
+            return path.equals(second) || path.equals(second.reversed().stream().map(Interval::reverse).toList());
+        }
+
         Vec3 direction(boolean start) {
             for (int i = 0; i < parts.size(); i++) {
                 var part = parts.get(start ? i : parts.size() - 1 - i);
@@ -233,36 +261,63 @@ final class CatenaryRoute {
         return points.size() < 2 ? null : new Route(graph, List.copyOf(parts), points);
     }
     private record Location(TrackGraph graph, TrackEdge edge, double distance) {}
-    private record Part(TrackEdge edge, double from, double to) {}
+    record RailEdge(TrackNodeLocation first, TrackNodeLocation second) {
+        static RailEdge of(TrackEdge edge) {
+            var start = edge.node1.getLocation();
+            var end = edge.node2.getLocation();
+            return NODE_ORDER.compare(start, end) < 0 ? new RailEdge(start, end) : new RailEdge(end, start);
+        }
+    }
+
+    record Interval(RailEdge edge, long from, long to) {
+        Interval reverse() { return new Interval(edge, to, from); }
+        long low() { return Math.min(from, to); }
+        long high() { return Math.max(from, to); }
+        double length() { return (high() - low()) * EPSILON; }
+    }
+
+    record Part(TrackEdge edge, double from, double to) {
+        Interval interval() {
+            var rail = RailEdge.of(edge);
+            double length = edge.getLength();
+            boolean forward = rail.first.equals(edge.node1.getLocation());
+            return new Interval(rail, Math.round((forward ? from : length - from) / EPSILON),
+                    Math.round((forward ? to : length - to) / EPSILON));
+        }
+    }
 
     private static final class Search {
         final TrackGraph graph;
         final List<Location> targets;
+        final List<List<Location>> waypoints;
         final List<Route> results = new ArrayList<>(2);
         final Set<TrackEdge> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         int examined;
         boolean exhausted;
 
-        Search(TrackGraph graph, List<Location> targets) {
+        Search(TrackGraph graph, List<Location> targets, List<List<Location>> waypoints) {
             this.graph = graph;
             this.targets = targets;
+            this.waypoints = waypoints;
         }
 
-        void walk(TrackEdge edge, double begin, double length, List<Part> parts) {
-            if (results.size() > 1 || exhausted || !visited.add(edge)) return;
+        void walk(TrackEdge edge, double begin, double length, int waypoint, List<Part> parts) {
+            if (results.size() > 1 || exhausted || visited.contains(edge)) return;
             if (++examined > MAX_EDGES) {
                 exhausted = true;
                 return;
             }
+            visited.add(edge);
             for (var target : targets) {
                 if (target.graph != graph || target.edge != edge || target.distance + EPSILON < begin) continue;
                 double total = length + target.distance - begin;
                 if (total < 0.5 || total > MAX_LENGTH + EPSILON) continue;
+                if (advance(edge, begin, target.distance, waypoint) != waypoints.size()) continue;
                 parts.add(new Part(edge, begin, target.distance));
                 var points = sample(graph, parts);
                 var route = new Route(graph, List.copyOf(parts), points);
                 parts.removeLast();
-                if (points.size() > 1 && results.stream().noneMatch(result -> result.points.equals(points))) {
+                if (points.size() > 1 && results.stream().noneMatch(result -> result.trackPath().equals(route.trackPath()))) {
                     results.add(route);
                 }
             }
@@ -271,11 +326,12 @@ final class CatenaryRoute {
             if (nextLength <= MAX_LENGTH && results.size() < 2) {
                 parts.add(new Part(edge, begin, fullLength));
                 var exits = graph.getConnectionsFrom(edge.node2);
+                int remaining = advance(edge, begin, fullLength, waypoint);
                 if (exits != null) {
                     for (TrackNode destination : exits.keySet()) {
                         var next = exits.get(destination);
                         if (destination == edge.node1 || next.isInterDimensional() || !edge.canTravelTo(next)) continue;
-                        walk(next, 0, nextLength, parts);
+                        walk(next, 0, nextLength, remaining, parts);
                     }
                 }
                 parts.removeLast();
@@ -283,6 +339,19 @@ final class CatenaryRoute {
             visited.remove(edge);
         }
 
+        private int advance(TrackEdge edge, double begin, double end, int waypoint) {
+            for (; waypoint < waypoints.size(); waypoint++) {
+                var limit = Double.POSITIVE_INFINITY;
+                for (var location : waypoints.get(waypoint)) {
+                    if (location.graph == graph && location.edge == edge && location.distance + EPSILON >= begin) {
+                        limit = Math.min(limit, location.distance);
+                    }
+                }
+                if (limit > end + EPSILON) break;
+                begin = limit;
+            }
+            return waypoint;
+        }
     }
 
     private static List<Vec3> sample(TrackGraph graph, List<Part> parts) {

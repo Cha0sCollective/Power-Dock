@@ -21,8 +21,6 @@ import java.util.Objects;
 
 public final class PantographBlockEntity extends ElectricBlockEntity {
     private static final int RECEIVER_INTERVAL = 4;
-    @Nullable private BlockPos feeder;
-    @Nullable private CatenaryContacts contacts;
     @Nullable private Couple<Frequency> receiver;
     @Nullable private Boolean receiverPowered;
     private long nextReceiverCheck;
@@ -37,7 +35,7 @@ public final class PantographBlockEntity extends ElectricBlockEntity {
     }
 
     public boolean connected() {
-        return contacts != null;
+        return getBlockState().getValue(CatenaryBlock.CONNECTED);
     }
 
     @Override
@@ -54,19 +52,7 @@ public final class PantographBlockEntity extends ElectricBlockEntity {
             return;
         }
         var base = body.logicalPose().transformPosition(base());
-        var contact = CatenaryLines.get(server).nearest(server, base);
-        var nextFeeder = contact == null ? null : contact.feeder();
-        if (contacts != null) {
-            if (!Objects.equals(feeder, nextFeeder) || !contacts.live()) disconnect();
-            return;
-        }
-        if (nextFeeder != null) {
-            contacts = CatenaryContacts.close(server, worldPosition, nextFeeder, 0.04f);
-            if (contacts != null) {
-                feeder = nextFeeder;
-                showConnection(true);
-            }
-        }
+        showConnection(CatenaryLines.get(server).contact(worldPosition, base, LoconauticsCompatibility.occupiedRails(body)));
     }
 
     Vec3 base() {
@@ -148,9 +134,7 @@ public final class PantographBlockEntity extends ElectricBlockEntity {
     }
 
     void disconnect() {
-        if (contacts != null) contacts.open();
-        feeder = null;
-        contacts = null;
+        if (level instanceof ServerLevel server) CatenaryLines.get(server).release(worldPosition);
         showConnection(false);
     }
 

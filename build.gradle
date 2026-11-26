@@ -14,11 +14,19 @@ def withComputerCraft = providers.gradleProperty('withComputerCraft').map { it.t
 def loconauticsTestMods = providers.gradleProperty('loconauticsTestMods').getOrNull()
 def lifecyclePhase = providers.gradleProperty('dockLifecyclePhase').getOrNull()
 def lifecycleRun = providers.gradleProperty('dockLifecycleRun').getOrNull()
+def catenaryRecovery = providers.gradleProperty('catenaryRecovery').getOrNull()
+def catenaryRecoveryRun = providers.gradleProperty('catenaryRecoveryRun').getOrNull()
+if (catenaryRecovery != null && (!(catenaryRecovery in ['save', 'restore', 'save-beta3', 'restore-beta3']) ||
+        catenaryRecoveryRun == null || !(catenaryRecoveryRun ==~ /[a-z0-9_-]+/) ||
+        loconauticsTestMods == null || lifecyclePhase != null)) {
+    throw new GradleException('Catenary recovery requires a phase, run name, and Loconautics fixtures.')
+}
 if (lifecyclePhase != null && (!(lifecyclePhase in ['save-clean', 'save-abrupt', 'restore']) ||
         lifecycleRun == null || !(lifecycleRun ==~ /[a-z0-9_-]+/))) {
     throw new GradleException('Run the dock restart fixture through tools/test_dock_restart.py.')
 }
-def dockingTestRun = layout.buildDirectory.dir(lifecyclePhase != null ? "dock-restart/${lifecycleRun}" :
+def dockingTestRun = layout.buildDirectory.dir(catenaryRecovery != null ? "catenary-restart/${catenaryRecoveryRun}" :
+        lifecyclePhase != null ? "dock-restart/${lifecycleRun}" :
         "power-dock-test-${sableVersion}${loconauticsTestMods != null ? '-loconautics' : ''}${withComputerCraft ? '-cc' : ''}")
 def dockingTestLane = lifecyclePhase != null ? 'lifecycle' :
         loconauticsTestMods != null ? (withComputerCraft ? 'loconautics-cc' : 'loconautics') :
@@ -76,7 +84,10 @@ neoForge {
             loadedMods = [mods.powerdock, mods.powerdock_tests]
             gameDirectory = dockingTestRun
             programArguments.addAll('--world', 'fixture-world')
-            if (lifecyclePhase != null) {
+            if (catenaryRecovery != null) {
+                systemProperty 'neoforge.enabledGameTestNamespaces', 'powerdock_catenary_recovery'
+                systemProperty 'powerdock.test.catenaryRecovery', catenaryRecovery
+            } else if (lifecyclePhase != null) {
                 systemProperty 'neoforge.enabledGameTestNamespaces', 'powerdock_lifecycle_tests'
                 systemProperty 'powerdock.test.lifecyclePhase', lifecyclePhase
             } else if (loconauticsTestMods != null) {
@@ -93,7 +104,7 @@ neoForge {
 def resetDockingFixture = tasks.register('resetDockingFixture', Delete) {
     delete dockingTestRun.map { it.dir('fixture-world') }
 }
-if (lifecyclePhase == null) {
+if (lifecyclePhase == null && catenaryRecovery == null) {
     tasks.named('runGameTestServer') { dependsOn resetDockingFixture }
 }
 

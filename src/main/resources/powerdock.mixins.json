@@ -3,6 +3,7 @@
   "package": "org.cha0scollective.powerdock.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "HangerCordEndpoints",
     "TrackGraphChanges",
     "TrackGraphRegistryChanges",
     "TrackGraphLookup"

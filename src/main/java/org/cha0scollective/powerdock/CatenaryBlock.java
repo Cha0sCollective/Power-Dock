@@ -6,9 +6,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
@@ -33,7 +31,6 @@ import org.patryk3211.powergrid.electricity.base.TerminalBoundingBox;
 import org.patryk3211.powergrid.electricity.base.terminals.RotatedTerminalCollection;
 
 import java.util.function.Supplier;
-import javax.annotation.Nullable;
 
 final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock implements IBE<T> {
     static final BooleanProperty RAISED = BooleanProperty.create("raised");
@@ -70,12 +67,6 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
     }
 
     @Override
-    public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
-        super.setPlacedBy(level, pos, state, placer, stack);
-        if (level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger) hanger.alignOnPlacement();
-    }
-
-    @Override
     protected RenderShape getRenderShape(BlockState state) {
         return state.getValue(TRACK_ALIGNED) ? RenderShape.INVISIBLE : RenderShape.MODEL;
     }
@@ -94,9 +85,17 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         if (state.getValue(TRACK_ALIGNED) && level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger
-                && hanger.mount() != null) return hanger.mount().shape;
+                && hanger.mount() != null) return hanger.hasRaisedHead() ? Shapes.empty() : hanger.mount().shape;
         var facing = state.getValue(BlockStateProperties.HORIZONTAL_FACING);
         return Shapes.or(CASE, POSTS.get(facing, 0).getShape(), POSTS.get(facing, 1).getShape());
+    }
+
+    @Override
+    protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        if (level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger && hanger.hasRaisedHead()) {
+            return Shapes.empty();
+        }
+        return super.getCollisionShape(state, level, pos, context);
     }
 
     static TerminalBoundingBox post(Direction facing, int index) { return POSTS.get(facing, index); }
@@ -104,18 +103,26 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
         if (!player.getMainHandItem().isEmpty()) return InteractionResult.PASS;
+        if (level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger) return useHanger(level, player, hanger);
         if (!level.isClientSide && level.mayInteract(player, pos)) {
-            if (level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger) {
-                hanger.adjust(player.isShiftKeyDown());
-                player.displayClientMessage(Component.translatable("message.powerdock.hanger_settings",
-                        hanger.width(), hanger.height()), true);
-            } else if (level.getBlockEntity(pos) instanceof PantographBlockEntity pickup) {
+            if (level.getBlockEntity(pos) instanceof PantographBlockEntity pickup) {
                 if (player.isShiftKeyDown() && player instanceof ServerPlayer serverPlayer) {
                     PantographReceiverMenu.open(serverPlayer, pickup);
                 } else {
                     pickup.toggleRaised();
                 }
             }
+        }
+        return InteractionResult.sidedSuccess(level.isClientSide);
+    }
+
+    static InteractionResult useHanger(Level level, Player player, CatenaryHangerBlockEntity hanger) {
+        if (!player.getMainHandItem().isEmpty()) return InteractionResult.PASS;
+        if (!level.isClientSide && level.mayInteract(player, hanger.getBlockPos())) {
+            var message = hanger.adjust(player.isShiftKeyDown(), player)
+                    ? Component.translatable("message.powerdock.hanger_settings", hanger.width(), hanger.height())
+                    : Component.translatable("message.powerdock.hanger_blocked");
+            player.displayClientMessage(message, true);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

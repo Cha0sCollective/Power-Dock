@@ -4,6 +4,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.neoforged.bus.api.IEventBus;
@@ -25,6 +26,8 @@ public final class PowerDock {
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, ID);
     static final Supplier<MenuType<PantographReceiverMenu>> PANTOGRAPH_RECEIVER_MENU =
             MENUS.register("pantograph_receiver", () -> new MenuType<>(PantographReceiverMenu::new, FeatureFlags.DEFAULT_FLAGS));
+    static final Supplier<MenuType<HangerSettingsMenu>> HANGER_SETTINGS_MENU =
+            MENUS.register("hanger_settings", () -> new MenuType<>(HangerSettingsMenu::new, FeatureFlags.DEFAULT_FLAGS));
 
     static final Supplier<PowerDockBlock> DOCK = BLOCKS.registerBlock("power_dock",
             properties -> new PowerDockBlock(properties, false), dockProperties());
@@ -43,6 +46,11 @@ public final class PowerDock {
     static final Supplier<CatenaryBlock<CatenaryHangerBlockEntity>> CATENARY_HANGER = BLOCKS.registerBlock("catenary_hanger",
             properties -> new CatenaryBlock<>(properties, CatenaryHangerBlockEntity.class, () -> PowerDock.CATENARY_HANGER_ENTITY.get()),
             jumperProperties().dynamicShape());
+    static final Supplier<HangerHeadBlock> HANGER_HEAD = BLOCKS.registerBlock("catenary_hanger_head",
+            HangerHeadBlock::new, jumperProperties().dynamicShape().noLootTable());
+    static final Supplier<BlockEntityType<HangerHeadBlockEntity>> HANGER_HEAD_ENTITY =
+            BLOCK_ENTITIES.register("catenary_hanger_head", () -> BlockEntityType.Builder
+                    .of(HangerHeadBlockEntity::new, HANGER_HEAD.get()).build(null));
     static final Supplier<CatenaryBlock<PantographBlockEntity>> PANTOGRAPH = BLOCKS.registerBlock("pantograph",
             properties -> new CatenaryBlock<>(properties, PantographBlockEntity.class, () -> PowerDock.PANTOGRAPH_ENTITY.get()),
             jumperProperties());
@@ -71,7 +79,7 @@ public final class PowerDock {
         var pinItem = ITEMS.registerSimpleBlockItem("pin_dock", PIN_DOCK);
         var jumperItem = ITEMS.registerSimpleBlockItem("rail_jumper", RAIL_JUMPER);
         var flushJumperItem = ITEMS.registerSimpleBlockItem("flush_rail_jumper", FLUSH_RAIL_JUMPER);
-        var hanger = ITEMS.registerSimpleBlockItem("catenary_hanger", CATENARY_HANGER);
+        var hanger = ITEMS.register("catenary_hanger", () -> new CatenaryHangerItem(new Item.Properties()));
         var pantograph = ITEMS.registerSimpleBlockItem("pantograph", PANTOGRAPH);
         modBus.addListener((BuildCreativeModeTabContentsEvent event) -> {
             if (event.getTabKey() == CreativeModeTabs.REDSTONE_BLOCKS) {
@@ -83,6 +91,9 @@ public final class PowerDock {
                 event.accept(pantograph.get());
             }
         });
+        modBus.addListener(HangerRailControls::registerPayloads);
+        modBus.addListener(CatenaryWireUse::registerPayloads);
+        modBus.addListener(CatenaryWireSync::registerPayloads);
         computerCraft = ModList.get().isLoaded("computercraft");
         if (computerCraft) ComputerCraftIntegration.register(modBus);
     }

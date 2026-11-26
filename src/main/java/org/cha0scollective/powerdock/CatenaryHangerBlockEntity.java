@@ -6,6 +6,8 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
@@ -14,23 +16,22 @@ import org.patryk3211.powergrid.electricity.base.ElectricBlock;
 import org.patryk3211.powergrid.electricity.base.ElectricBlockEntity;
 import org.patryk3211.powergrid.electricity.base.IElectric;
 import org.patryk3211.powergrid.electricity.base.ITerminalPlacement;
+import org.patryk3211.powergrid.electricity.wire.powercord.CordEntity;
 
 import javax.annotation.Nullable;
+import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 public final class CatenaryHangerBlockEntity extends ElectricBlockEntity implements IElectric {
     private int height = 7;
     private int width = 7;
+    private int headOffset;
     @Nullable private BlockPos previous;
     @Nullable private BlockPos next;
     private boolean incomingManaged;
     private boolean outgoingManaged;
-    @Nullable private BlockPos fromRail;
-    @Nullable private BlockPos toRail;
-    @Nullable private CatenarySpan span;
-    @Nullable private BlockPos renderedFeeder;
-    @Nullable private CatenaryContacts contacts;
-    @Nullable private CatenaryLines.Upstream connectedTo;
+    @Nullable private CatenarySpan.Head wireHead;
     @Nullable private HangerMount mount;
     private long nextCheck;
 
@@ -48,174 +49,243 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     @Override
     public ITerminalPlacement terminal(BlockState state, int index) {
         if (index < 0 || index >= terminalCount()) return null;
-        return mount == null ? CatenaryBlock.post(state.getValue(BlockStateProperties.HORIZONTAL_FACING), index)
-                : mount.post(index);
+        if (mount == null) return CatenaryBlock.post(state.getValue(BlockStateProperties.HORIZONTAL_FACING), index);
+        return headOffset == 0 ? mount.post(index) : mount.post(index).offset(0, headOffset, 0);
     }
 
     @Nullable HangerMount mount() { return mount; }
+    public BlockPos headPosition() { return worldPosition.above(headOffset); }
+    boolean hasRaisedHead() { return headOffset != 0; }
 
     @Override
     public void initialize() {
         super.initialize();
-        if (level instanceof ServerLevel server) synchronizeLinks(CatenaryLines.get(server));
+        if (level instanceof ServerLevel server) {
+            synchronizeLinks(CatenaryLines.get(server));
+            if (mount != null && moveHead(server, offsetAtHeight(height), null)) sendData();
+        }
         alignOnPlacement();
     }
 
     void alignOnPlacement() {
         if (mount == null && level instanceof ServerLevel server && Sable.HELPER.getContaining(this) == null) {
             var head = CatenaryRoute.placementHead(server, worldPosition);
-            if (head != null) align(server, head);
+            if (head != null) align(server, head, null);
         }
     }
 
-    private void align(ServerLevel server, CatenarySpan.Head head) {
+    void placeOnRail(HangerTrackTarget target, Player player) {
+        if (mount != null || !(level instanceof ServerLevel server) || Sable.HELPER.getContaining(this) != null) return;
+        height = HangerTrackTarget.INITIAL_HEIGHT;
+        align(server, target.frame(), player);
+    }
+
+    private void align(ServerLevel server, CatenarySpan.Head head, @Nullable Player player) {
         if (mount != null) return;
         mount = HangerMount.fromTrack(worldPosition, head, getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING));
+        if (!moveHead(server, offsetAtHeight(height), player)) {
+            mount = null;
+            return;
+        }
         server.setBlock(worldPosition, getBlockState().setValue(CatenaryBlock.TRACK_ALIGNED, true), Block.UPDATE_CLIENTS);
-        ElectricBlock.refreshConnectionEntities(server, worldPosition);
+        refreshPowerConnections(server);
         notifyUpdate();
+    }
+
+    private int offsetAtHeight(int clearance) {
+        return Mth.floor(mount.rail.y + clearance + HangerFixture.BEAM_RISE);
+    }
+
+    private boolean moveHead(ServerLevel server, int offset, @Nullable Player player) {
+        var target = worldPosition.above(offset);
+        var old = headPosition();
+        if (player != null && (!server.mayInteract(player, old) || !server.mayInteract(player, target))) return false;
+        if (offset != 0 && !ownsHead(server, target)) {
+            if (server.isOutsideBuildHeight(target) || !server.getBlockState(target).isAir()
+                    || !server.setBlock(target, PowerDock.HANGER_HEAD.get().stateForOffset(offset), Block.UPDATE_ALL)) return false;
+        }
+        if (headOffset != offset) {
+            int previousOffset = headOffset;
+            headOffset = offset;
+            if (previousOffset != 0 && ownsHead(server, old)) server.removeBlock(old, false);
+            refreshPowerConnections(server);
+            setChanged();
+        }
+        return true;
+    }
+
+    private boolean ownsHead(ServerLevel level, BlockPos pos) {
+        var state = level.getBlockState(pos);
+        return state.is(PowerDock.HANGER_HEAD.get()) && worldPosition.equals(HangerHeadBlock.anchor(pos, state));
+    }
+
+    private void refreshPowerConnections(ServerLevel server) {
+        ElectricBlock.refreshConnectionEntities(server, worldPosition);
+        for (var wires : getElectricBehaviour().getConnections().values()) {
+            for (var wire : wires) if (wire instanceof CordEntity cord) cord.refreshTerminalPositions();
+        }
     }
 
     public int height() { return height; }
     public int width() { return width; }
-    boolean hasLinks() { return previous != null || next != null; }
-    boolean isFeeder() { return previous == null; }
+    boolean hasLinks() {
+        return previous != null || next != null
+                || level instanceof ServerLevel server && !CatenaryLines.get(server).attached(worldPosition).isEmpty();
+    }
 
-    public void adjust(boolean adjustHeight) {
-        if (adjustHeight) {
-            height = height == 12 ? 4 : height + 1;
-            if (level instanceof ServerLevel server) CatenaryLines.get(server).resize(server, worldPosition, height);
-        } else width = width == 13 ? 3 : width + 2;
+    public boolean linkedTo(BlockPos neighbour) {
+        return level instanceof ServerLevel server
+                && CatenaryLines.get(server).attached(worldPosition).stream()
+                        .anyMatch(link -> link.opposite(worldPosition).equals(neighbour));
+    }
+
+    public List<Vec3> overheadWireEnds() {
+        return level instanceof ServerLevel server ? CatenaryLines.get(server).wireEnds(worldPosition) : List.of();
+    }
+
+    public boolean adjust(boolean adjustHeight) { return adjust(adjustHeight, null); }
+
+    boolean adjust(boolean adjustHeight, @Nullable Player player) {
+        int updatedHeight = adjustHeight ? height == 12 ? 4 : height + 1 : height;
+        int updatedWidth = adjustHeight ? width : width == 13 ? 3 : width + 2;
+        return setClearance(updatedHeight, updatedWidth, player);
+    }
+
+    boolean setClearance(int updatedHeight, int updatedWidth, @Nullable Player player) {
+        if (updatedHeight != height && level instanceof ServerLevel server) {
+            if (mount != null && !moveHead(server, offsetAtHeight(updatedHeight), player)) return false;
+            CatenaryLines.get(server).resize(server, worldPosition, updatedHeight);
+        }
+        height = updatedHeight;
+        width = updatedWidth;
         nextCheck = 0;
         notifyUpdate();
-    }
-
-    @Nullable CatenarySpan span() { return span; }
-
-    @Nullable CatenarySpan.Head fixtureHead() {
-        if (span != null) return span.points.getLast();
-        var downstream = hangerAt(next);
-        if (downstream != null && downstream.span != null) return downstream.span.points.getFirst();
-        return mount == null ? null : mount.wireHead(worldPosition, height);
-    }
-
-    @Nullable
-    CatenarySpan preview(CatenaryHangerBlockEntity other) {
-        var path = proposedRoute(other);
-        return path == null ? null : CatenarySpan.create(other.worldPosition, path, height, other.height);
-    }
-
-    @Nullable
-    private CatenaryRoute.Route proposedRoute(CatenaryHangerBlockEntity other) {
-        if (!(level instanceof ServerLevel server) || level != other.level || other == this
-                || Sable.HELPER.getContaining(this) != null || Sable.HELPER.getContaining(other) != null) return null;
-        var lines = CatenaryLines.get(server);
-        synchronizeLinks(lines);
-        other.synchronizeLinks(lines);
-        if (next != null || other.hasLinks()) return null;
-        return CatenaryRoute.betweenHangers(server, worldPosition, other.worldPosition);
-    }
-
-    public boolean linkTo(CatenaryHangerBlockEntity other) {
-        var path = proposedRoute(other);
-        if (path == null || !(level instanceof ServerLevel server)) return false;
-        var lines = CatenaryLines.get(server);
-        var ancestor = worldPosition;
-        for (int depth = 2; ancestor != null; depth++) {
-            if (depth > CatenaryLines.MAX_HANGERS || ancestor.equals(other.worldPosition)) return false;
-            var incoming = lines.incoming(ancestor);
-            if (incoming != null) ancestor = incoming.from;
-            else {
-                var hanger = CatenaryLines.loadedHanger(server, ancestor);
-                if (hanger == null) return false;
-                ancestor = hanger.previous;
-            }
-        }
-        align(server, CatenarySpan.Head.along(path.points().getFirst(), path.direction(true)));
-        other.align(server, CatenarySpan.Head.along(path.points().getLast(), path.direction(false)));
-        lines.put(worldPosition, other.worldPosition, height, other.height, path);
-        next = other.worldPosition;
-        outgoingManaged = true;
-        other.previous = worldPosition;
-        other.incomingManaged = true;
-        other.nextCheck = 0;
-        notifyUpdate();
-        other.notifyUpdate();
         return true;
     }
 
+    @Nullable
+    public HangerFixture fixture() {
+        var head = fixtureHead();
+        if (head == null) return null;
+        var origin = Vec3.atLowerCornerOf(worldPosition);
+        var wires = head.center().subtract(origin);
+        var housing = mount == null ? new Vec3(0.5, 0, 0.5) : mount.housing.add(0, headOffset, 0);
+        var railY = mount == null ? wires.y - height : mount.rail.y;
+        return new HangerFixture(wires, head.across(), housing, railY, width);
+    }
+
+    @Nullable private CatenarySpan.Head fixtureHead() {
+        if (wireHead != null) return wireHead;
+        return mount == null ? null : mount.wireHead(worldPosition, height);
+    }
+
+    LinkPlan planLink(CatenaryHangerBlockEntity other) {
+        return planLink(other, List.of());
+    }
+
+    LinkPlan planLink(CatenaryHangerBlockEntity other, List<BlockPos> waypoints) {
+        if (!(level instanceof ServerLevel server) || level != other.level || other == this
+                || Sable.HELPER.getContaining(this) != null || Sable.HELPER.getContaining(other) != null) {
+            return LinkPlan.rejected("invalid_route");
+        }
+        var lines = CatenaryLines.get(server);
+        var choice = CatenaryRoute.choose(server, worldPosition, other.worldPosition, waypoints);
+        var path = choice.route();
+        if (path == null) return LinkPlan.rejected(choice.needsWaypoint() ? "choose_waypoint" : "invalid_route");
+        for (var existing : lines.attached(worldPosition)) {
+            if (!existing.opposite(worldPosition).equals(other.worldPosition)) continue;
+            var old = existing.route(server);
+            if (old != null && old.sameTrack(path)) return LinkPlan.rejected("duplicate_span");
+        }
+        if (lines.overlapsOtherLine(server, worldPosition, other.worldPosition, height, other.height, path)) {
+            return new LinkPlan(this, other, path, "overlap_span");
+        }
+        return new LinkPlan(this, other, path, null);
+    }
+
+    record LinkPlan(@Nullable CatenaryHangerBlockEntity source, @Nullable CatenaryHangerBlockEntity destination,
+                    @Nullable CatenaryRoute.Route route, @Nullable String error) {
+        static LinkPlan rejected(String reason) { return new LinkPlan(null, null, null, reason); }
+
+        CatenaryLayout.Span span(UUID id) {
+            return new CatenaryLayout.Span(id, source.getBlockPos(), destination.getBlockPos(),
+                    source.height, destination.height, route);
+        }
+
+        void commit(UUID id) {
+            source.linkTo(destination, span(id));
+        }
+    }
+
+    public boolean linkTo(CatenaryHangerBlockEntity other) {
+        var plan = planLink(other);
+        if (plan.error != null) return false;
+        plan.commit(UUID.randomUUID());
+        return true;
+    }
+
+    private void linkTo(CatenaryHangerBlockEntity other, CatenaryLayout.Span span) {
+        var server = (ServerLevel) level;
+        var lines = CatenaryLines.get(server);
+        var path = span.route();
+        align(server, CatenarySpan.Head.along(path.points().getFirst(), path.direction(true)), null);
+        other.align(server, CatenarySpan.Head.along(path.points().getLast(), path.direction(false)), null);
+        lines.addSpan(span);
+        synchronizeLinks(lines);
+        other.synchronizeLinks(lines);
+        other.nextCheck = 0;
+        notifyUpdate();
+        other.notifyUpdate();
+    }
+
     void unlink() {
-        if (level instanceof ServerLevel server) {
-            var lines = CatenaryLines.get(server);
-            synchronizeLinks(lines);
-            lines.unlink(worldPosition);
-        }
-        var before = hangerAt(previous);
-        var after = hangerAt(next);
-        if (before != null && worldPosition.equals(before.next)) {
-            before.next = null;
-            before.notifyUpdate();
-        }
-        if (after != null && worldPosition.equals(after.previous)) {
-            after.previous = null;
-            after.closeContacts();
-            after.updateSpan(null, null);
-            after.notifyUpdate();
+        if (!(level instanceof ServerLevel server)) return;
+        var lines = CatenaryLines.get(server);
+        if (previous != null && !incomingManaged) lines.rememberLegacyCut(previous, worldPosition);
+        if (next != null && !outgoingManaged) lines.rememberLegacyCut(worldPosition, next);
+        var links = List.copyOf(lines.attached(worldPosition));
+        lines.unlink(worldPosition);
+        for (var link : links) {
+            var neighbour = hangerAt(link.opposite(worldPosition));
+            if (neighbour != null) neighbour.synchronizeLinks(lines);
         }
         previous = next = null;
-        closeContacts();
-        updateSpan(null, null);
+        lines.detachPost(worldPosition);
+        wireHead = null;
         notifyUpdate();
     }
 
     @Override
     public void tick() {
         super.tick();
-        if (!(level instanceof ServerLevel server) || previous == null) return;
+        if (!(level instanceof ServerLevel server)) return;
         var lines = CatenaryLines.get(server);
         synchronizeLinks(lines);
-        if (previous != null && server.getGameTime() >= nextCheck) refreshRoute(server, lines);
-        var link = lines.incoming(worldPosition);
-        var currentSpan = link != null && link.route(server) != null ? link.span : null;
-        var root = currentSpan == null ? null : lines.root(server, worldPosition);
-        if (span != currentSpan || !Objects.equals(renderedFeeder, root)) {
-            updateSpan(currentSpan, root);
+        if (previous != null && !incomingManaged && server.getGameTime() >= nextCheck) migrateLegacySpan(server, lines);
+        var current = lines.hangerHead(worldPosition);
+        if (!Objects.equals(wireHead, current)) {
+            wireHead = current;
             sendData();
         }
-        var upstream = available() && currentSpan != null ? lines.loadedUpstream(server, worldPosition) : null;
-        if (contacts != null && (!Objects.equals(connectedTo, upstream) || !contacts.live())) closeContacts();
-        if (contacts == null && upstream != null) {
-            contacts = CatenaryContacts.close(server, worldPosition, upstream.pos(), 0.02f * upstream.hops());
-            if (contacts != null) connectedTo = upstream;
-        }
+        lines.updatePost(worldPosition);
     }
 
-    private void refreshRoute(ServerLevel level, CatenaryLines lines) {
+    private void migrateLegacySpan(ServerLevel level, CatenaryLines lines) {
         nextCheck = level.getGameTime() + 20;
         var before = CatenaryLines.loadedHanger(level, previous);
         if (before == null) return;
         before.synchronizeLinks(lines);
-        if (!worldPosition.equals(before.next)) {
-            // A beta2 neighbor was unlinked before its chunk could save the old end of the span.
+        if (lines.legacyCut(previous, worldPosition) || !worldPosition.equals(before.next)) {
             previous = null;
             setChanged();
             return;
         }
-        var link = lines.incoming(worldPosition);
-        var from = CatenaryRoute.trackBelow(level, previous);
-        var to = CatenaryRoute.trackBelow(level, worldPosition);
-        boolean changed = link == null || link.route(level) == null || !Objects.equals(from, fromRail)
-                || !Objects.equals(to, toRail) || before.height != link.fromHeight || height != link.toHeight;
-        if (!changed) return;
         var fresh = CatenaryRoute.betweenHangers(level, previous, worldPosition);
         if (fresh == null) {
-            if (link != null) lines.suspend(link);
             nextCheck = level.getGameTime() + 100;
             return;
         }
-        fromRail = from;
-        toRail = to;
-        lines.put(previous, worldPosition, before.height, height, fresh);
+        lines.importLegacy(previous, worldPosition, before.height, height, fresh);
         synchronizeLinks(lines);
         before.synchronizeLinks(lines);
     }
@@ -231,9 +301,9 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
             incomingManaged = true;
             previous = before == null ? null : before.from;
         }
-        if (after != null || outgoingManaged) {
+        if (!after.isEmpty() || outgoingManaged) {
             outgoingManaged = true;
-            next = after == null ? null : after.to;
+            next = after.isEmpty() ? null : after.getFirst().to;
         }
         if (!Objects.equals(previous, oldPrevious) || !Objects.equals(next, oldNext)
                 || oldIncomingManaged != incomingManaged || oldOutgoingManaged != outgoingManaged) {
@@ -253,34 +323,20 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
                 ? hanger : null;
     }
 
-    private void updateSpan(@Nullable CatenarySpan updated, @Nullable BlockPos feeder) {
-        if (span != null && level != null && level.isClientSide) span.unregisterClient(level);
-        span = updated;
-        renderedFeeder = feeder;
-        if (span != null && level != null && level.isClientSide) registerClientSpan();
-    }
-
-    private void registerClientSpan() {
-        span.registerClient(level, renderedFeeder == null ? worldPosition : renderedFeeder);
-    }
-
-    private void closeContacts() {
-        if (contacts != null) contacts.open();
-        contacts = null;
-        connectedTo = null;
-    }
-
     @Override
     public void onChunkUnloaded() {
+        if (level instanceof ServerLevel server) CatenaryLines.get(server).detachPost(worldPosition);
         super.onChunkUnloaded();
-        closeContacts();
-        updateSpan(null, null);
+        wireHead = null;
     }
 
     @Override
     public void remove() {
-        if (level instanceof ServerLevel) unlink();
-        else updateSpan(null, null);
+        if (level instanceof ServerLevel server) {
+            if (headOffset != 0 && ownsHead(server, headPosition())) server.removeBlock(headPosition(), false);
+            unlink();
+        }
+        else wireHead = null;
         super.remove();
     }
 
@@ -289,6 +345,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         super.write(tag, registries, clientPacket);
         tag.putInt("Height", height);
         tag.putInt("Width", width);
+        if (headOffset != 0) tag.putInt("HeadOffset", headOffset);
         if (previous != null) tag.putLong("Previous", previous.asLong());
         if (next != null) tag.putLong("Next", next.asLong());
         if (incomingManaged) tag.putBoolean("IncomingManaged", true);
@@ -301,10 +358,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
             placement.putDouble("Yaw", mount.yaw);
             tag.put("Mount", placement);
         }
-        if (clientPacket && span != null) {
-            tag.put("Span", span.write());
-            if (renderedFeeder != null) tag.putLong("Feeder", renderedFeeder.asLong());
-        }
+        if (clientPacket && wireHead != null) tag.put("WireHead", wireHead.write(Vec3.atLowerCornerOf(worldPosition)));
     }
 
     @Override
@@ -312,6 +366,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         super.read(tag, registries, clientPacket);
         height = tag.contains("Height") ? Math.clamp(tag.getInt("Height"), 4, 12) : 7;
         width = tag.contains("Width") ? Math.clamp(tag.getInt("Width"), 3, 13) : 7;
+        headOffset = Math.clamp(tag.getInt("HeadOffset"), -16, 16);
         previous = tag.contains("Previous") ? BlockPos.of(tag.getLong("Previous")) : null;
         next = tag.contains("Next") ? BlockPos.of(tag.getLong("Next")) : null;
         incomingManaged = tag.getBoolean("IncomingManaged");
@@ -321,13 +376,8 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         double yaw = placement.getDouble("Yaw");
         if (placement.isEmpty()) mount = null;
         else if (mount == null || !mount.rail.equals(rail) || mount.yaw != yaw) mount = new HangerMount(rail, yaw);
-        if (clientPacket) updateSpan(CatenarySpan.read(worldPosition, tag.getList("Span", Tag.TAG_COMPOUND)),
-                tag.contains("Feeder", Tag.TAG_LONG) ? BlockPos.of(tag.getLong("Feeder")) : null);
+        if (clientPacket) wireHead = tag.contains("WireHead", Tag.TAG_COMPOUND)
+                ? CatenarySpan.Head.read(Vec3.atLowerCornerOf(worldPosition), tag.getCompound("WireHead")) : null;
     }
 
-    @Override
-    public void setLevel(net.minecraft.world.level.Level level) {
-        super.setLevel(level);
-        if (span != null && level.isClientSide) registerClientSpan();
-    }
 }
