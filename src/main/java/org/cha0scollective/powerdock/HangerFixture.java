@@ -22,8 +22,8 @@ public record HangerFixture(Vec3 wireCenter, Vec3 contactSpacing, Vec3 housing, 
     }
 
     Vec3 housingJoint(Vec3 beam) {
-        double jointY = beam.y >= housing.y + 0.5 ? 0.5 : 0.15625;
-        return housing.add(0, jointY, 0);
+        // Seat the mounting shoe on the five-pixel-high enclosure.
+        return housing.add(0, Math.clamp(beam.y - housing.y, 0, 5.0 / 16), 0);
     }
 
     Vec3 beamJoint(Vec3 beam) {

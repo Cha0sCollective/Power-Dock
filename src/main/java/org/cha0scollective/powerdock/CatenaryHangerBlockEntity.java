@@ -8,20 +8,25 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.Vec3;
+import org.patryk3211.powergrid.collections.ModdedBlocks;
 import org.patryk3211.powergrid.electricity.base.ElectricBlock;
 import org.patryk3211.powergrid.electricity.base.ElectricBlockEntity;
 import org.patryk3211.powergrid.electricity.base.IElectric;
 import org.patryk3211.powergrid.electricity.base.ITerminalPlacement;
+import org.patryk3211.powergrid.electricity.sim.ElectricWire;
+import org.patryk3211.powergrid.electricity.sim.node.OwnedFloatingNode;
+import org.patryk3211.powergrid.electricity.wire.BlockWireEndpoint;
 import org.patryk3211.powergrid.electricity.wire.powercord.CordEntity;
 
-import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import javax.annotation.Nullable;
 
 public final class CatenaryHangerBlockEntity extends ElectricBlockEntity implements IElectric {
     private int height = 7;
@@ -34,6 +39,11 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     @Nullable private CatenarySpan.Head wireHead;
     @Nullable private HangerMount mount;
     private long nextCheck;
+    final ClippedFeeds clipped = new ClippedFeeds();
+    final FrameWiring wiring = new FrameWiring();
+    private ElectricWire positiveBridge, negativeBridge;
+    private FrameStyle support = FrameStyle.FLOATING;
+    @Nullable private HangerFrame cachedFrame;
 
     CatenaryHangerBlockEntity(BlockPos pos, BlockState state) {
         super(PowerDock.CATENARY_HANGER_ENTITY.get(), pos, state);
@@ -41,16 +51,51 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
 
     @Override
     public void buildCircuit(CircuitBuilder builder) {
-        builder.setTerminalCount(2);
+        builder.setTerminalCount(Math.max(terminalCount(), getElectricBehaviour()==null ? 0 : getElectricBehaviour().getExternalNodes().size()));
+        positiveBridge = negativeBridge = null;
+        if (support != null && support.terminals() && !clipped.external) {
+            positiveBridge = builder.connect(.0001f,builder.terminalNode(0),builder.terminalNode(2));
+            negativeBridge = builder.connect(.0001f,builder.terminalNode(1),builder.terminalNode(3));
+        }
     }
 
-    @Override public int terminalCount() { return 2; }
+    @Override public int terminalCount() { return wiring==null ? 2 : wiring.count(support!=null && support.terminals()); }
+
+    boolean internalBridge(Object wire) { return wire==positiveBridge || wire==negativeBridge; }
+
+    private void growTerminals() {
+        var behaviour=getElectricBehaviour();
+        if(behaviour==null) return;
+        var nodes=behaviour.getExternalNodes();
+        // PG's full rebuild drops every wire. Append only new, independently addressable nodes.
+        while(nodes.size()<terminalCount()) nodes.add(new OwnedFloatingNode(
+                new BlockWireEndpoint(worldPosition,nodes.size())));
+    }
+
+    void fittingsChanged() {
+        cachedFrame = null;
+        growTerminals();
+        wiring.rejected=-1;
+        notifyUpdate();
+    }
 
     @Override
     public ITerminalPlacement terminal(BlockState state, int index) {
         if (index < 0 || index >= terminalCount()) return null;
+        if (index >= 2) return wiring.terminal(frame(), index);
         if (mount == null) return CatenaryBlock.post(state.getValue(BlockStateProperties.HORIZONTAL_FACING), index);
         return headOffset == 0 ? mount.post(index) : mount.post(index).offset(0, headOffset, 0);
+    }
+
+    @Override
+    public int terminalIndexAt(BlockState state, Vec3 point) {
+        for (int i = 0; i < 2; i++) if (terminal(state, i).check(point)) return i;
+        for (var entry : wiring.bodies(frame()).entrySet()) {
+            var local = entry.getValue().local(point);
+            if (Math.abs(local.x) <= 1.00001 && Math.abs(local.y) <= 1.00001
+                    && local.z >= -.00001 && local.z <= 1.00001) return entry.getKey();
+        }
+        return -1;
     }
 
     @Nullable HangerMount mount() { return mount; }
@@ -60,6 +105,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     @Override
     public void initialize() {
         super.initialize();
+        FrameInteraction.track(this,true);
         if (level instanceof ServerLevel server) {
             synchronizeLinks(CatenaryLines.get(server));
             if (mount != null && moveHead(server, offsetAtHeight(height), null)) sendData();
@@ -83,6 +129,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     private void align(ServerLevel server, CatenarySpan.Head head, @Nullable Player player) {
         if (mount != null) return;
         mount = HangerMount.fromTrack(worldPosition, head, getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING));
+        cachedFrame = null;
         if (!moveHead(server, offsetAtHeight(height), player)) {
             mount = null;
             return;
@@ -126,6 +173,50 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         }
     }
 
+    FrameStyle support() { return support; }
+
+    HangerFrame frame() {
+        if (cachedFrame == null && fixtureHead() != null) cachedFrame = layout(fixture(), support);
+        return cachedFrame;
+    }
+
+    private HangerFrame layout(HangerFixture fixture, FrameStyle style) {
+        return layout(fixture,style,clipped.mask());
+    }
+
+    void clipStyle(FrameStyle next) {
+        support=next;
+        fittingsChanged();
+    }
+
+    HangerFrame layout(HangerFixture fixture, FrameStyle style, int mask) {
+        var across = mount == null ? fixture.contactSpacing() : new Vec3(Math.cos(mount.yaw), 0, -Math.sin(mount.yaw));
+        Vec3[] ends = null;
+        if (mask != 0) {
+            ends = new Vec3[2];
+            for (int i=0;i<2;i++) ends[i] = mount == null ? CatenaryBlock.post(getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING), i).getOrigin()
+                    : mount.post(i).getOrigin().add(fixture.housing().subtract(mount.housing));
+        }
+        return new HangerFrame(fixture, style, across, wiring.fittings().values(),mask,ends);
+    }
+
+    boolean setSupport(FrameStyle nextStyle, Player player) {
+        var current=fixture();
+        if (current==null || !(level instanceof ServerLevel server)) return false;
+        var proposed=layout(current,nextStyle);
+        if (!clipped.fits(this,proposed,player) || !wiring.validate(this,proposed,Vec3.ZERO,player)) return false;
+        boolean circuitChanged=support.terminals()!=nextStyle.terminals();
+        support = nextStyle;
+        if (!support.terminals()) clipped.external=false;
+        cachedFrame = proposed;
+        growTerminals();
+        if(circuitChanged) getElectricBehaviour().rebuildCircuit(false);
+        refreshPowerConnections(server);
+        setChanged();
+        notifyUpdate();
+        return true;
+    }
+
     public int height() { return height; }
     public int width() { return width; }
     boolean hasLinks() {
@@ -152,13 +243,26 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     }
 
     boolean setClearance(int updatedHeight, int updatedWidth, @Nullable Player player) {
+        if(level instanceof ServerLevel server && fixture()!=null) {
+            var old=fixture();
+            int delta=updatedHeight-height;
+            var shift=new Vec3(0,mount==null ? 0 : offsetAtHeight(updatedHeight)-headOffset,0);
+            var proposed=layout(new HangerFixture(old.wireCenter().add(0,delta,0),old.contactSpacing(),
+                    old.housing().add(shift),old.railY(),updatedWidth),support);
+            if(!clipped.fits(this,proposed,player) || !wiring.validate(this,proposed,shift,player)) return false;
+        }
         if (updatedHeight != height && level instanceof ServerLevel server) {
             if (mount != null && !moveHead(server, offsetAtHeight(updatedHeight), player)) return false;
             CatenaryLines.get(server).resize(server, worldPosition, updatedHeight);
         }
         height = updatedHeight;
         width = updatedWidth;
+        cachedFrame = null;
         nextCheck = 0;
+        if(level instanceof ServerLevel server) {
+            wireHead=CatenaryLines.get(server).hangerHead(worldPosition);
+            refreshPowerConnections(server);
+        }
         notifyUpdate();
         return true;
     }
@@ -259,12 +363,14 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     public void tick() {
         super.tick();
         if (!(level instanceof ServerLevel server)) return;
+        clipped.verifyAfterLoad(server,this);
         var lines = CatenaryLines.get(server);
         synchronizeLinks(lines);
         if (previous != null && !incomingManaged && server.getGameTime() >= nextCheck) migrateLegacySpan(server, lines);
         var current = lines.hangerHead(worldPosition);
         if (!Objects.equals(wireHead, current)) {
             wireHead = current;
+            cachedFrame = null;
             sendData();
         }
         lines.updatePost(worldPosition);
@@ -325,6 +431,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
 
     @Override
     public void onChunkUnloaded() {
+        FrameInteraction.track(this,false);
         if (level instanceof ServerLevel server) CatenaryLines.get(server).detachPost(worldPosition);
         super.onChunkUnloaded();
         wireHead = null;
@@ -332,8 +439,12 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
 
     @Override
     public void remove() {
+        FrameInteraction.track(this,false);
         if (level instanceof ServerLevel server) {
+            clipped.broken(server);
             if (headOffset != 0 && ownsHead(server, headPosition())) server.removeBlock(headPosition(), false);
+            if (!wiring.fittings().isEmpty()) Block.popResource(server,headPosition(),
+                    new ItemStack(ModdedBlocks.WIRE_CONNECTOR.get(), wiring.fittings().size()));
             unlink();
         }
         else wireHead = null;
@@ -345,6 +456,9 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         super.write(tag, registries, clientPacket);
         tag.putInt("Height", height);
         tag.putInt("Width", width);
+        support.write(tag);
+        wiring.write(tag);
+        clipped.write(tag);
         if (headOffset != 0) tag.putInt("HeadOffset", headOffset);
         if (previous != null) tag.putLong("Previous", previous.asLong());
         if (next != null) tag.putLong("Next", next.asLong());
@@ -363,7 +477,18 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
 
     @Override
     protected void read(CompoundTag tag, HolderLookup.Provider registries, boolean clientPacket) {
+        var oldSupport=support;
+        var oldMount=mount;
+        var oldHead=wireHead;
+        int oldHeight=height, oldWidth=width, oldOffset=headOffset;
+        boolean oldBridge=support.terminals() && !clipped.external;
+        support = FrameStyle.read(tag);
+        if (clipped.read(tag)) cachedFrame=null;
+        if (wiring.read(tag)) cachedFrame = null;
+        growTerminals();
         super.read(tag, registries, clientPacket);
+        if(oldBridge!=(support.terminals() && !clipped.external) && getElectricBehaviour()!=null)
+            getElectricBehaviour().rebuildCircuit(false);
         height = tag.contains("Height") ? Math.clamp(tag.getInt("Height"), 4, 12) : 7;
         width = tag.contains("Width") ? Math.clamp(tag.getInt("Width"), 3, 13) : 7;
         headOffset = Math.clamp(tag.getInt("HeadOffset"), -16, 16);
@@ -378,6 +503,8 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         else if (mount == null || !mount.rail.equals(rail) || mount.yaw != yaw) mount = new HangerMount(rail, yaw);
         if (clientPacket) wireHead = tag.contains("WireHead", Tag.TAG_COMPOUND)
                 ? CatenarySpan.Head.read(Vec3.atLowerCornerOf(worldPosition), tag.getCompound("WireHead")) : null;
+        if (!oldSupport.equals(support) || oldMount!=mount || oldHeight!=height || oldWidth!=width
+                || oldOffset!=headOffset || !Objects.equals(oldHead,wireHead)) cachedFrame=null;
     }
 
 }

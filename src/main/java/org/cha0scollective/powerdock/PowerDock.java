@@ -2,6 +2,8 @@ package org.cha0scollective.powerdock;
 
 import net.minecraft.core.registries.Registries;
 import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
@@ -24,6 +26,10 @@ public final class PowerDock {
     private static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES =
             DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, ID);
     private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, ID);
+    private static final DeferredRegister<EntityType<?>> ENTITIES = DeferredRegister.create(Registries.ENTITY_TYPE, ID);
+    static final Supplier<EntityType<ClippedLeadEntity>> CLIPPED_LEAD = ENTITIES.register("clipped_lead",
+            () -> EntityType.Builder.<ClippedLeadEntity>of(ClippedLeadEntity::new, MobCategory.MISC)
+                    .sized(.1f, .1f).clientTrackingRange(8).updateInterval(Integer.MAX_VALUE).build("powerdock:clipped_lead"));
     static final Supplier<MenuType<PantographReceiverMenu>> PANTOGRAPH_RECEIVER_MENU =
             MENUS.register("pantograph_receiver", () -> new MenuType<>(PantographReceiverMenu::new, FeatureFlags.DEFAULT_FLAGS));
     static final Supplier<MenuType<HangerSettingsMenu>> HANGER_SETTINGS_MENU =
@@ -75,6 +81,7 @@ public final class PowerDock {
         ITEMS.register(modBus);
         BLOCK_ENTITIES.register(modBus);
         MENUS.register(modBus);
+        ENTITIES.register(modBus);
         var item = ITEMS.registerSimpleBlockItem("power_dock", DOCK);
         var pinItem = ITEMS.registerSimpleBlockItem("pin_dock", PIN_DOCK);
         var jumperItem = ITEMS.registerSimpleBlockItem("rail_jumper", RAIL_JUMPER);

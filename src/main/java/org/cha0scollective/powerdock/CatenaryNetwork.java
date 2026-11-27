@@ -9,6 +9,7 @@ import org.cha0scollective.powerdock.CatenarySpan.Contact;
 import org.cha0scollective.powerdock.CatenarySpan.Distance;
 import org.patryk3211.powergrid.electricity.GlobalElectricNetworks;
 import org.patryk3211.powergrid.electricity.sim.ElectricWire;
+import org.patryk3211.powergrid.electricity.wire.BlockWireEndpoint;
 import org.patryk3211.powergrid.electricity.wire.IWireEndpoint;
 import org.patryk3211.powergrid.electricity.wire.registry.WireRegistry;
 
@@ -87,7 +88,7 @@ final class CatenaryNetwork {
         boolean added = loadedPosts.add(pos);
         boolean wasLive = shouldSolve();
         if (added || Math.floorMod(level.getGameTime() + pos.asLong(), 10) == 0) {
-            if (hasOutsideWires(pos)) wiredPosts.add(pos);
+            if (hasOutsideWires(pos,hanger)) wiredPosts.add(pos);
             else wiredPosts.remove(pos);
         }
         if (added || wasLive != shouldSolve()) rebuild = true;
@@ -114,20 +115,22 @@ final class CatenaryNetwork {
         if (contacts != null) contacts.open();
     }
 
-    private boolean hasOutsideWires(BlockPos pos) {
+    private boolean hasOutsideWires(BlockPos pos,CatenaryHangerBlockEntity hanger) {
         var real = Terminals.block(pos);
         var contact = postConnections.get(pos);
-        return hasOutsideWires(real.supply(), contact == null ? null : contact.supply())
-                || hasOutsideWires(real.returnWire(), contact == null ? null : contact.returnWire());
+        return hasOutsideWires(real.supply(), contact == null ? null : contact.supply(),hanger)
+                || hasOutsideWires(real.returnWire(), contact == null ? null : contact.returnWire(),hanger)
+                || hanger.support().terminals() && (hasOutsideWires(new BlockWireEndpoint(pos,2),null,hanger)
+                || hasOutsideWires(new BlockWireEndpoint(pos,3),null,hanger));
     }
 
-    private boolean hasOutsideWires(IWireEndpoint end, ElectricWire owned) {
+    private boolean hasOutsideWires(IWireEndpoint end, ElectricWire owned,CatenaryHangerBlockEntity hanger) {
         var grid = GlobalElectricNetworks.getWorldNetworks(level);
         var node = end.getNode(level);
         if (node == null) return false;
-        for (var wire : grid.globalGraph.getWires(node)) if (wire != owned) return true;
+        for (var wire : grid.globalGraph.getWires(node)) if (wire != owned && !hanger.internalBridge(wire) && !hanger.clipped.ownsWire(level,wire)) return true;
         var connected = grid.findConnectedWires(end);
-        return connected != null && !connected.isEmpty();
+        return connected != null && connected.stream().anyMatch(segment -> !(segment.owner instanceof ClippedLeadEntity));
     }
 
     private boolean shouldSolve() {

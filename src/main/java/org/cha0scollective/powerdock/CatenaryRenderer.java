@@ -41,6 +41,7 @@ final class CatenaryRenderer {
 
     @SubscribeEvent
     public static void register(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerEntityRenderer(PowerDock.CLIPPED_LEAD.get(), net.minecraft.client.renderer.entity.NoopRenderer::new);
         event.registerBlockEntityRenderer(PowerDock.CATENARY_HANGER_ENTITY.get(), unused -> new Hanger());
         event.registerBlockEntityRenderer(PowerDock.PANTOGRAPH_ENTITY.get(), unused -> new Pickup());
     }
@@ -50,13 +51,16 @@ final class CatenaryRenderer {
         public void render(CatenaryHangerBlockEntity hanger, float partialTick, PoseStack pose,
                            MultiBufferSource buffers, int light, int overlay) {
             var out = beams(pose, buffers, light, overlay);
-            var fixture = hanger.fixture();
-            if (fixture != null) drawFixture(out, fixture);
+            var frame = hanger.frame();
+            if (frame != null) {
+                drawFrame(out, frame);
+                FrameSelection.renderConnectors(hanger,pose,buffers,light,overlay);
+            }
             var mount = hanger.mount();
             if (mount != null && hanger.getBlockState().getValue(CatenaryBlock.TRACK_ALIGNED)) {
                 var renderer = Minecraft.getInstance().getBlockRenderer();
                 var state = PowerDock.CATENARY_HANGER.get().defaultBlockState();
-                var housing = fixture.housing();
+                var housing = frame.housing;
                 pose.pushPose();
                 pose.translate(housing.x, housing.y, housing.z);
                 pose.mulPose(Axis.YP.rotation((float) mount.yaw));
@@ -71,7 +75,7 @@ final class CatenaryRenderer {
 
         @Override
         public AABB getRenderBoundingBox(CatenaryHangerBlockEntity hanger) {
-            return new AABB(hanger.getBlockPos()).inflate(8, 16, 8);
+            return new AABB(hanger.getBlockPos()).inflate(17, 24, 17);
         }
     }
 
@@ -104,23 +108,13 @@ final class CatenaryRenderer {
     }
 
     static Beams beams(PoseStack pose, MultiBufferSource buffers, int light, int overlay) {
-        return new Beams(buffers.getBuffer(SOLID), pose.last(), light, overlay);
+        return new Beams(buffers, pose.last(), light, overlay);
     }
 
-    static void drawFixture(Beams out, HangerFixture fixture) {
-        var beam = fixture.crossbeamCenter();
-        var width = fixture.mastOffset();
-        out.beam(beam.subtract(width), beam.add(width), 0.125, METAL);
-        var housing = fixture.housingJoint(beam);
-        var attachment = new Vec3(housing.x, beam.y, housing.z);
-        out.beam(housing, attachment, 0.09375, STEEL);
-        out.beam(attachment, fixture.beamJoint(beam), 0.09375, STEEL);
+    private static final Map<HangerFrame, HangerFrameMesh> FRAME_MESHES = new WeakHashMap<>();
 
-        for (int side = -1; side <= 1; side += 2) {
-            var mast = beam.add(width.scale(side));
-            out.beam(mast, new Vec3(mast.x, fixture.railY(), mast.z), 0.125, METAL);
-            out.beam(fixture.insulatorBottom(side), fixture.insulatorTop(beam, side), 0.0625, CERAMIC);
-        }
+    static void drawFrame(Beams out, HangerFrame frame) {
+        FRAME_MESHES.computeIfAbsent(frame, HangerFrameMesh::new).render(out);
     }
 
     private static final class Pickup implements BlockEntityRenderer<PantographBlockEntity> {
@@ -147,7 +141,7 @@ final class CatenaryRenderer {
                     across = left.subtract(right).scale(0.5);
                 }
             }
-            var out = new Beams(buffers.getBuffer(SOLID), pose.last(), light, overlay);
+            var out = beams(pose, buffers, light, overlay);
             var head = center.add(0, -0.065, 0);
             var elbow = foundation.lerp(head, 0.48).add(Vec3.atLowerCornerOf(facing.getNormal()).scale(raised ? 0.37 : 0.23));
             for (double side : new double[]{-0.42, 0.42}) {
@@ -199,14 +193,13 @@ final class CatenaryRenderer {
         private final int[] colors;
         private int used;
 
-        private WireMesh(int segments) {
-            // Two wires, four faces per segment, one normal and four vertices per face.
-            data = new float[segments * 2 * 4 * 15];
-            colors = new int[segments * 2 * 4];
+        private WireMesh(int faces) {
+            data = new float[faces * 15];
+            colors = new int[faces];
         }
 
         static WireMesh build(CatenarySpan span, Vec3 origin) {
-            var mesh = new WireMesh(span.points.size() - 1 + 3 * ((span.crossoverAtStart ? 1 : 0) + (span.crossoverAtEnd ? 1 : 0)));
+            var mesh = new WireMesh(8 * (span.points.size() - 1 + 3 * ((span.crossoverAtStart ? 1 : 0) + (span.crossoverAtEnd ? 1 : 0))));
             for (int i = 1; i < span.points.size(); i++) {
                 var a = span.points.get(i - 1);
                 var b = span.points.get(i);
@@ -255,6 +248,7 @@ final class CatenaryRenderer {
         }
 
         void render(Beams out) {
+            out.begin(SOLID);
             for (int offset = 0; offset < used; offset += 15) {
                 out.normal(data[offset], data[offset + 1], data[offset + 2]);
                 for (int i = offset + 3; i < offset + 15; i += 3) {
@@ -265,21 +259,27 @@ final class CatenaryRenderer {
     }
 
     static final class Beams {
-        private final VertexConsumer buffer;
+        private final MultiBufferSource buffers;
+        private VertexConsumer buffer;
         private final PoseStack.Pose pose;
         private final int light;
         private final int overlay;
         private final Vector3f position = new Vector3f();
         private final Vector3f faceNormal = new Vector3f();
 
-        Beams(VertexConsumer buffer, PoseStack.Pose pose, int light, int overlay) {
-            this.buffer = buffer;
+        Beams(MultiBufferSource buffers, PoseStack.Pose pose, int light, int overlay) {
+            this.buffers = buffers;
             this.pose = pose;
             this.light = light;
             this.overlay = overlay;
         }
 
+        void begin(RenderType type) {
+            buffer = buffers.getBuffer(type);
+        }
+
         void beam(Vec3 first, Vec3 second, double width, int color) {
+            begin(SOLID);
             beamFaces(first, second, width, (normal, a, b, c, d) -> {
                 normal((float) normal.x, (float) normal.y, (float) normal.z);
                 vertex(a, color);
@@ -289,7 +289,7 @@ final class CatenaryRenderer {
             });
         }
 
-        private void normal(float x, float y, float z) {
+        void normal(float x, float y, float z) {
             pose.transformNormal(x, y, z, faceNormal);
         }
 
@@ -298,8 +298,12 @@ final class CatenaryRenderer {
         }
 
         private void vertex(float x, float y, float z, int color) {
+            vertex(x, y, z, color, 0.5f, 0.5f);
+        }
+
+        void vertex(float x, float y, float z, int color, float u, float v) {
             pose.pose().transformPosition(x, y, z, position);
-            buffer.addVertex(position.x, position.y, position.z, color, 0.5f, 0.5f, overlay, light,
+            buffer.addVertex(position.x, position.y, position.z, color, u, v, overlay, light,
                     faceNormal.x, faceNormal.y, faceNormal.z);
         }
     }

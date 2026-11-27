@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'org.cha0scollective.powerdock'
-version = '0.4.0-beta4'
+version = '0.4.0-beta5'
 base { archivesName = 'power-dock' }
 java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
 def minimumSableVersion = '2.0.5'

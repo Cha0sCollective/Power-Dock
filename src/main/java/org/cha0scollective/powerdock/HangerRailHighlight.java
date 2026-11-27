@@ -3,13 +3,13 @@ package org.cha0scollective.powerdock;
 import com.mojang.math.Axis;
 import com.simibubi.create.content.trains.track.ITrackBlock;
 import com.simibubi.create.content.trains.track.TrackBlockOutline;
+import dev.ryanhcode.sable.Sable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -40,6 +40,7 @@ final class HangerRailHighlight {
     private static Target select(Minecraft mc, ClientLevel level, LocalPlayer player) {
         if (mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK) {
             var pos = hit.getBlockPos();
+            if (Sable.HELPER.isInPlotGrid(level, pos)) return null;
             var state = level.getBlockState(pos);
             if (!(state.getBlock() instanceof ITrackBlock track)) return null;
             var axes = track.getTrackAxes(level, pos, state);
@@ -54,11 +55,9 @@ final class HangerRailHighlight {
         if (curveHit == null || curveHit.blockEntity().isRemoved() || curveHit.blockEntity().getLevel() != level) return null;
         var curve = curveHit.blockEntity().getConnections().get(curveHit.loc().curveTarget());
         if (curve == null) return null;
-        var eye = player.getEyePosition();
-        var direction = player.calculateViewVector(player.getXRot(), player.getYRot());
-        var end = eye.add(direction.scale(player.blockInteractionRange()));
-        var hit = level.clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
-        var aim = HangerTrackTarget.aimAtCurve(curve, eye, direction, hit.getLocation().distanceTo(eye));
+        var ray = HangerTrackTarget.trace(level, player);
+        if (ray == null) return null;
+        var aim = HangerTrackTarget.aimAtCurve(curve, ray.eye(), ray.direction(), ray.visible());
         if (aim == null || HangerTrackTarget.mountedHanger(level, BlockPos.containing(aim.point()), aim.point()) == null) return null;
         return new Target(level, curveHit.vec(), curveHit.direction(), 0.5, null, curveHit);
     }

@@ -1,7 +1,8 @@
 package org.cha0scollective.powerdock;
 
-import com.simibubi.create.content.trains.track.ITrackBlock;
 import com.simibubi.create.content.trains.track.BezierConnection;
+import com.simibubi.create.content.trains.track.ITrackBlock;
+import dev.ryanhcode.sable.Sable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
@@ -9,6 +10,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -20,25 +22,50 @@ record HangerTrackTarget(BlockPos rail, CatenarySpan.Head frame) {
 
     @Nullable
     static HangerTrackTarget pick(ServerLevel level, Player player) {
-        var eye = player.getEyePosition();
-        var direction = player.calculateViewVector(player.getXRot(), player.getYRot());
-        var end = eye.add(direction.scale(player.blockInteractionRange()));
-        var hit = level.clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
-        if (hit.getType() == HitResult.Type.BLOCK && level.getBlockState(hit.getBlockPos()).getBlock() instanceof ITrackBlock) {
+        var ray = trace(level, player);
+        if (ray == null) return null;
+        var hit = ray.hit();
+        if (hit.getType() == HitResult.Type.BLOCK
+                && !Sable.HELPER.isInPlotGrid(level, hit.getBlockPos())
+                && level.getBlockState(hit.getBlockPos()).getBlock() instanceof ITrackBlock) {
             var selected = forRail(level, hit.getBlockPos());
             if (selected != null) return selected;
         }
 
-        double visible = hit.getLocation().distanceTo(eye);
-        var rayEnd = eye.add(direction.scale(visible));
+        var rayEnd = ray.eye().add(ray.direction().scale(ray.visible()));
         CurveAim best = null;
-        for (var candidate : CatenaryTrackIndex.curvesNear(level, new AABB(eye, rayEnd).inflate(CURVE_REACH))) {
-            var aim = aimAtCurve(candidate.connection(), eye, direction, visible);
+        for (var candidate : CatenaryTrackIndex.curvesNear(level, new AABB(ray.eye(), rayEnd).inflate(CURVE_REACH))) {
+            var aim = aimAtCurve(candidate.connection(), ray.eye(), ray.direction(), ray.visible());
             if (aim != null && (best == null || aim.distanceSqr < best.distanceSqr)) best = aim;
         }
         if (best == null) return null;
         var selected = forRail(level, BlockPos.containing(best.point));
         return selected != null && selected.frame.center().distanceToSqr(best.point) < 0.75 * 0.75 ? selected : null;
+    }
+
+    @Nullable
+    static TrackRay trace(Level level, Player player) {
+        double reach = player.blockInteractionRange();
+        if (!Double.isFinite(reach) || reach <= 0) return null;
+        var eye = player.getEyePosition();
+        var direction = player.calculateViewVector(player.getXRot(), player.getYRot());
+        var end = eye.add(direction.scale(reach));
+        var hit = level.clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, player));
+        var originBody = Sable.HELPER.getContaining(level, eye);
+        if (originBody != null) {
+            var pose = originBody.logicalPose();
+            eye = pose.transformPosition(eye);
+            direction = pose.transformNormal(direction);
+        }
+
+        double visible = reach;
+        if (hit.getType() == HitResult.Type.BLOCK) {
+            // Sable can return the hit in plot coordinates even when the player is in the world.
+            var hitBody = Sable.HELPER.getContaining(level, hit.getBlockPos());
+            var point = hitBody == null ? hit.getLocation() : hitBody.logicalPose().transformPosition(hit.getLocation());
+            visible = Math.min(reach, eye.distanceTo(point));
+        }
+        return Double.isFinite(visible) ? new TrackRay(eye, direction, visible, hit) : null;
     }
 
     @Nullable
@@ -81,7 +108,7 @@ record HangerTrackTarget(BlockPos rail, CatenarySpan.Head frame) {
 
     @Nullable
     private static HangerTrackTarget forRail(ServerLevel level, BlockPos rail) {
-        if (!level.hasChunkAt(rail)) return null;
+        if (Sable.HELPER.isInPlotGrid(level, rail) || !level.hasChunkAt(rail)) return null;
         var probe = level.getBlockState(rail).getBlock() instanceof ITrackBlock ? rail.above() : rail.above(2);
         var frame = CatenaryRoute.placementHead(level, probe);
         return frame == null ? null : new HangerTrackTarget(rail, frame);
@@ -110,5 +137,6 @@ record HangerTrackTarget(BlockPos rail, CatenarySpan.Head frame) {
         return null;
     }
 
+    record TrackRay(Vec3 eye, Vec3 direction, double visible, BlockHitResult hit) {}
     record CurveAim(Vec3 point, double distanceSqr) {}
 }

@@ -23,6 +23,12 @@ final class HangerSettingsMenu extends AbstractContainerMenu {
     static final int PREVIOUS_SPAN = 4;
     static final int NEXT_SPAN = 5;
     static final int CUT_SPAN = 6;
+    private final DataSlot rejected = DataSlot.standalone();
+    private final DataSlot kind = DataSlot.standalone();
+    private final DataSlot side = DataSlot.standalone();
+    private final DataSlot leftReach = DataSlot.standalone();
+    private final DataSlot rightReach = DataSlot.standalone();
+    private final DataSlot feedPosts = DataSlot.standalone();
 
     @Nullable private final CatenaryHangerBlockEntity hanger;
     private final BlockPos rail;
@@ -57,9 +63,14 @@ final class HangerSettingsMenu extends AbstractContainerMenu {
         addDataSlot(spanNumber);
         addDataSlot(spanCount);
         addDataSlot(confirmCut);
+        for (var slot : List.of(kind, side, leftReach, rightReach, feedPosts,rejected)) addDataSlot(slot);
         syncClearance();
     }
 
+    FrameStyle style() { return new FrameStyle(FrameStyle.Kind.values()[kind.get()], side.get(), leftReach.get(), rightReach.get(), feedPosts.get() != 0); }
+
+    boolean clippedFeed() { return feedPosts.get() == 2; }
+    int rejected() { return rejected.get()-1; }
     int height() { return height.get(); }
     int width() { return width.get(); }
     int spanNumber() { return spanNumber.get(); }
@@ -78,6 +89,11 @@ final class HangerSettingsMenu extends AbstractContainerMenu {
     public boolean clickMenuButton(Player player, int id) {
         if (hanger == null || !stillValid(player)) return false;
         if (id == PREVIOUS_SPAN || id == NEXT_SPAN || id == CUT_SPAN) return selectSpan(player, id);
+        if (id >= 7 && id <= 14) {
+            boolean changed = hanger.setSupport(hanger.support().change(id), player);
+            broadcastChanges();
+            return changed;
+        }
         int nextHeight = hanger.height();
         int nextWidth = hanger.width();
         switch (id) {
@@ -148,6 +164,13 @@ final class HangerSettingsMenu extends AbstractContainerMenu {
 
     private void syncClearance() {
         if (hanger != null) {
+            var style = hanger.support();
+            rejected.set(hanger.wiring.rejected+1);
+            kind.set(style.kind().ordinal());
+            side.set(style.side());
+            leftReach.set(style.leftReach());
+            rightReach.set(style.rightReach());
+            feedPosts.set(hanger.clipped.external ? 2 : style.terminals() ? 1 : 0);
             height.set(hanger.height());
             width.set(hanger.width());
         }

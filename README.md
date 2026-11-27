@@ -2,7 +2,7 @@
 
 Power Dock connects Power Grid circuits between a Sable ship and a fixed station or between two Sable ships. The docks pull together, extend their arms, and transfer power in either direction.
 
-[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta4)
+[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta5)
 
 ## What you need
 
@@ -62,7 +62,15 @@ Look for the amber rail outline beneath a hanger. Sneak-right-click that rail wi
 
 Wire a Power Grid supply to any hanger's positive and negative posts with normal right-clicks. Several supplies can feed one line. They share the load according to the voltage and resistance of the circuit, and unequal supplies can feed current into one another. Keep each supply you want to use, its wiring, and its hanger loaded. The rest of the overhead line can carry power through unloaded hanger chunks. When upgrading from beta2, load both hangers on each existing span once so the line can be saved independently of the chunks.
 
-The masts extend down to rail height. Add footings under them on raised track or uneven ground. The hanger housing is the collidable part of the fixture.
+New hangers start **Floating**. Build your own support against the crosspiece, or choose **Mount** in the rail settings. Choose a left- or right-hand **Cantilever pole** or **Wall bracket**, a **Square portal** across both sides, or a **Ceiling drop** beneath a roof. Side follows the saved track direction. Reach moves the mounting plate or foot. Adjust each portal foot separately on sloping ground. Existing beta4 hangers open as square portals.
+
+For a manual feed, hold a Power Grid **Wire Connector** and point at an exposed steel flange, web, or diagonal brace. The outline shows where it will sit. Right-click to fit it. Use normal PG wire clicks to route positive and negative through separate fittings to the two overhead posts. Each fitting is its own junction. Disconnect its wires and sneak-right-click with a wrench to recover it.
+
+To run visible insulated leads on a cantilever or portal, start with **Feed posts** off. Hold a stack of Power Grid Insulated Copper Wire and sneak-right-click the mast or arm twice. The first click fits the positive lead and the second fits the negative. Small clips hold each continuous wire along the steel. Connect your supply to the matching copper posts at the foot. On a portal, **Side** chooses the leg.
+
+To cut one lead, right-click its insulation or one of its clips on the pole or arm with Power Grid Wire Cutters. The crosshair label identifies the positive or negative lead. You can also sneak-right-click it with a Create wrench to return the wire to your inventory.
+
+For an integrated feed, turn on **Feed posts** and wire your supply to the matching posts at the foot, wall or ceiling plate. On a portal, choose the leg with **Side**. If an edit would strand a connector or overstretch its wire, the settings identify the fitting to move or disconnect first.
 
 Fit a **Pantograph** on the roof of a Sable carriage. Place it while facing along the carriage so the folding arm runs along its length and the contact bar sits across the track. Connect its two posts to the onboard Power Grid circuit. Right-click with an empty hand to raise or lower it. The head has a working reach of about ¾ to 5½ blocks above its mount and can move 1¼ blocks side to side. The amber lamp and comparator indicate contact. When crossing between electrically separate lines, raise one pickup per onboard circuit to keep the sections isolated.
 

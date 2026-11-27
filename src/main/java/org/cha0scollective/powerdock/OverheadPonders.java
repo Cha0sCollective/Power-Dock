@@ -64,6 +64,49 @@ final class OverheadPonders {
         scene.idle(14);
         changeClearance(scene, util, hanger, initialHeight, initialHeight + 2, 9);
         scene.idle(71);
+        var sill=straight.offset(0,1,2);
+        var cap=sill.above(initialHeight+2);
+        var custom=util.select().fromTo(sill,cap).add(util.select().fromTo(cap,cap.north(2)));
+        scene.world().setBlocks(custom,net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState(),false);
+        scene.world().showSection(custom,Direction.DOWN);
+        explain(scene,cap.getCenter(),"Mount starts on Floating. Build a support up to the short crosspiece, or choose a mount in Hanger Settings.",105);
+        scene.world().hideSection(custom,Direction.UP);
+        var style=new FrameStyle(FrameStyle.Kind.CANTILEVER,1,0,0,false);
+        scene.world().modifyBlockEntityNBT(util.select().position(hanger),CatenaryHangerBlockEntity.class,style::write);
+        explain(scene,rail.center(),"Choose Cantilever pole and select a side. Reach moves the foot. A square portal has a separate reach for each foot.",100);
+        var first=new TubeFitting("leg-right/flange-b",new Vec3(1,0,.30),0);
+        var second=new TubeFitting("tie-right",new Vec3(1,0,.55),0);
+        var origin=Vec3.atLowerCornerOf(hanger);
+        var mount=HangerMount.fromTrack(hanger,rail,Direction.EAST);
+        var head=mount.wireHead(hanger,initialHeight+2);
+        var sample=new HangerFrame(new HangerFixture(head.center().subtract(origin),head.across(),
+                mount.housing.add(0,2,0),mount.rail.y,9),style,new Vec3(Math.cos(mount.yaw),0,-Math.sin(mount.yaw)));
+        var target=first.body(sample).start().add(origin);
+        scene.overlay().showControls(target,Pointing.RIGHT,36).rightClick().withItem(
+                new ItemStack(org.patryk3211.powergrid.collections.ModdedBlocks.WIRE_CONNECTOR.get()));
+        scene.world().modifyBlockEntityNBT(util.select().position(hanger),CatenaryHangerBlockEntity.class,tag->{
+            var list=new net.minecraft.nbt.ListTag();
+            list.add(first.write(4));
+            list.add(second.write(5));
+            tag.put("TubeConnectors",list);
+        });
+        geometry(scene,(level,beams)->{
+            if(!(level.getBlockEntity(hanger) instanceof CatenaryHangerBlockEntity block) || block.support().terminals()) return;
+            for(int pin=0;pin<2;pin++) {
+                var fitting=block.terminal(block.getBlockState(),4+pin);
+                if(fitting==null) continue;
+                var end=origin.add(fitting.getOrigin());
+                var top=origin.add(block.terminal(block.getBlockState(),pin).getOrigin());
+                beams.beam(end,top,.023,COPPER);
+            }
+        });
+        explain(scene,target,"Right-click exposed steel with a Power Grid Wire Connector, even on a brace. Wire each conductor through its own fittings to the matching head terminal.",126);
+        scene.world().modifyBlockEntityNBT(util.select().position(hanger),CatenaryHangerBlockEntity.class,tag->{
+            tag.remove("TubeConnectors"); tag.putBoolean("FeedPosts",true);
+        });
+        var foot=sample.member("leg-right").start().add(origin);
+        scene.overlay().showControls(foot.add(0,.7,0),Pointing.RIGHT,40).rightClick().withItem(linkingWire());
+        explain(scene,foot.add(0,.7,0),"For a shorter hookup, enable Feed posts. Wire your supply to the positive and negative posts at the foot. Each feeds its matching overhead terminal.",118);
         scene.markAsFinished();
     }
 
@@ -139,6 +182,7 @@ final class OverheadPonders {
             placement.putDouble("Z", mount.rail.z);
             placement.putDouble("Yaw", mount.yaw);
             tag.put("Mount", placement);
+            FrameStyle.FLOATING.write(tag);
             tag.putInt("Height", height);
             tag.putInt("Width", 7);
         });
@@ -219,7 +263,8 @@ final class OverheadPonders {
         scene.world().showSection(util.select().position(pos), Direction.DOWN);
         var wires = head(pos, heightOffset).center();
         var fixture = new HangerFixture(wires, ACROSS, Vec3.atBottomCenterOf(pos), wires.y - 7, width);
-        geometry(scene, (level, beams) -> CatenaryRenderer.drawFixture(beams, fixture));
+        var frame=new HangerFrame(fixture, FrameStyle.PORTAL, fixture.contactSpacing());
+        geometry(scene, (level, beams) -> CatenaryRenderer.drawFrame(beams, frame));
     }
 
     static void showWires(SceneBuilder scene, CatenarySpan.Head from, CatenarySpan.Head to) {

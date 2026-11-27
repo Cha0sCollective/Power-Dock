@@ -118,7 +118,7 @@ final class CatenaryRoute {
         return result;
     }
 
-    private static double closestParameter(BezierConnection curve, Vec3 column) {
+    static double closestParameter(BezierConnection curve, Vec3 column) {
         int steps = Math.clamp(curve.getSegmentCount(), 8, 512);
         int nearest = 0;
         double best = Double.POSITIVE_INFINITY;
