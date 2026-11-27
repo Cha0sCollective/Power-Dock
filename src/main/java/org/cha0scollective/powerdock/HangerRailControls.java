@@ -19,25 +19,27 @@ final class HangerRailControls {
 
     static void registerPayloads(RegisterPayloadHandlersEvent event) {
         event.registrar("1").playToServer(OpenFromRail.TYPE, OpenFromRail.CODEC, (packet, context) -> {
-            if (context.player() instanceof ServerPlayer player) openAtRail(player);
+            if (context.player() instanceof ServerPlayer player) openAtRail(player, true);
         });
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void useRail(PlayerInteractEvent.RightClickBlock event) {
         if (event.getHand() != InteractionHand.MAIN_HAND || event.getUseBlock().isFalse()
-                || !(event.getEntity() instanceof ServerPlayer player) || !openAtRail(player)) return;
+                || !(event.getEntity() instanceof ServerPlayer player) || !openAtRail(player, false)) return;
         event.setCancellationResult(InteractionResult.CONSUME);
         event.setCanceled(true);
     }
 
-    private static boolean openAtRail(ServerPlayer player) {
+    private static boolean openAtRail(ServerPlayer player, boolean curvedOnly) {
         if (!player.isShiftKeyDown() || !player.getMainHandItem().isEmpty() || player.isSpectator()) return false;
-        var target = HangerTrackTarget.pick(player.serverLevel(), player);
-        if (target == null || !player.level().mayInteract(player, target.rail())) return false;
-        var hanger = target.hanger(player.serverLevel());
-        if (hanger == null || !player.level().mayInteract(player, hanger.getBlockPos())) return false;
-        HangerSettingsMenu.open(player, hanger, target.rail());
+        var level = player.serverLevel();
+        var ray = HangerTrackTarget.trace(level, player);
+        if (ray == null) return false;
+        var target = HangerRailTarget.pick(level, ray, curvedOnly);
+        if (target == null || !level.mayInteract(player, target.rail())
+                || !level.mayInteract(player, target.hanger().getBlockPos())) return false;
+        HangerSettingsMenu.open(player, target.hanger(), target.rail());
         return true;
     }
 

@@ -1,24 +1,24 @@
 package org.cha0scollective.powerdock;
 
 import com.mojang.math.Axis;
-import com.simibubi.create.content.trains.track.ITrackBlock;
 import com.simibubi.create.content.trains.track.TrackBlockOutline;
-import dev.ryanhcode.sable.Sable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.phys.AABB;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
 
@@ -40,15 +40,8 @@ final class HangerRailHighlight {
     private static Target select(Minecraft mc, ClientLevel level, LocalPlayer player) {
         if (mc.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK) {
             var pos = hit.getBlockPos();
-            if (Sable.HELPER.isInPlotGrid(level, pos)) return null;
-            var state = level.getBlockState(pos);
-            if (!(state.getBlock() instanceof ITrackBlock track)) return null;
-            var axes = track.getTrackAxes(level, pos, state);
-            if (axes.size() != 1) return null;
-            var rail = Vec3.atBottomCenterOf(pos).add(0, track.getElevationAtCenter(level, pos, state), 0);
-            if (HangerTrackTarget.mountedHanger(level, pos, rail) == null) return null;
-            var direction = axes.getFirst();
-            return new Target(level, rail, direction, direction.length() * 0.5, pos, null);
+            var selected = HangerRailTarget.onStraight(level, pos);
+            return selected == null ? null : new Target(level, selected, pos, null);
         }
 
         var curveHit = TrackBlockOutline.result;
@@ -57,9 +50,23 @@ final class HangerRailHighlight {
         if (curve == null) return null;
         var ray = HangerTrackTarget.trace(level, player);
         if (ray == null) return null;
-        var aim = HangerTrackTarget.aimAtCurve(curve, ray.eye(), ray.direction(), ray.visible());
-        if (aim == null || HangerTrackTarget.mountedHanger(level, BlockPos.containing(aim.point()), aim.point()) == null) return null;
-        return new Target(level, curveHit.vec(), curveHit.direction(), 0.5, null, curveHit);
+        var selected = HangerRailTarget.onCurve(level, curve, ray);
+        return selected == null ? null : new Target(level, selected, null, curveHit);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void useCurvedRail(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isUseItem() || event.getHand() != InteractionHand.MAIN_HAND) return;
+        var mc = Minecraft.getInstance();
+        var player = mc.player;
+        if (mc.screen != null || mc.level == null || player == null || mc.getCameraEntity() != player
+                || player.isSpectator() || !player.isShiftKeyDown() || !player.getMainHandItem().isEmpty()) return;
+        var selected = select(mc, mc.level, player);
+        if (selected != null && selected.curve != null) {
+            PacketDistributor.sendToServer(HangerRailControls.OpenFromRail.INSTANCE);
+            event.setCanceled(true);
+            event.setSwingHand(false);
+        }
     }
 
     @SubscribeEvent
@@ -67,20 +74,19 @@ final class HangerRailHighlight {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES || target == null) return;
         var mc = Minecraft.getInstance();
         if (mc.level != target.level || mc.screen != null || mc.options.hideGui || !target.isStillAimedAt(mc)) return;
-        var center = target.center.subtract(event.getCamera().getPosition());
-        var direction = target.direction;
+        var center = target.rail.center().subtract(event.getCamera().getPosition());
+        var direction = target.rail.direction();
         var pose = event.getPoseStack();
         pose.pushPose();
         pose.translate(center.x, center.y, center.z);
         pose.mulPose(Axis.YP.rotation((float) Math.atan2(direction.x, direction.z)));
         pose.mulPose(Axis.XP.rotation((float) -Math.atan2(direction.y, direction.horizontalDistance())));
-        var bounds = new AABB(-0.515625, -0.03125, -target.halfLength, 0.515625, 0.1875, target.halfLength);
         LevelRenderer.renderLineBox(pose, mc.renderBuffers().bufferSource().getBuffer(RenderType.lines()),
-                bounds, 1f, 0.72f, 0.24f, 0.95f);
+                target.rail.outline(), 1f, 0.72f, 0.24f, 0.95f);
         pose.popPose();
     }
 
-    private record Target(ClientLevel level, Vec3 center, Vec3 direction, double halfLength,
+    private record Target(ClientLevel level, HangerRailTarget rail,
                           @Nullable BlockPos straight, @Nullable TrackBlockOutline.BezierPointSelection curve) {
         boolean isStillAimedAt(Minecraft mc) {
             if (straight != null) {

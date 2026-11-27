@@ -43,6 +43,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     final FrameWiring wiring = new FrameWiring();
     private ElectricWire positiveBridge, negativeBridge;
     private FrameStyle support = FrameStyle.FLOATING;
+    private boolean legacySupportLayout;
     @Nullable private HangerFrame cachedFrame;
 
     CatenaryHangerBlockEntity(BlockPos pos, BlockState state) {
@@ -190,6 +191,10 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     }
 
     HangerFrame layout(HangerFixture fixture, FrameStyle style, int mask) {
+        return layout(fixture, style, mask, legacySupportLayout);
+    }
+
+    private HangerFrame layout(HangerFixture fixture, FrameStyle style, int mask, boolean legacyLayout) {
         var across = mount == null ? fixture.contactSpacing() : new Vec3(Math.cos(mount.yaw), 0, -Math.sin(mount.yaw));
         Vec3[] ends = null;
         if (mask != 0) {
@@ -197,16 +202,19 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
             for (int i=0;i<2;i++) ends[i] = mount == null ? CatenaryBlock.post(getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING), i).getOrigin()
                     : mount.post(i).getOrigin().add(fixture.housing().subtract(mount.housing));
         }
-        return new HangerFrame(fixture, style, across, wiring.fittings().values(),mask,ends);
+        var gridRail = mount == null || legacyLayout ? null : mount.gridRail();
+        return new HangerFrame(fixture, style, across, wiring.fittings().values(), mask, ends, gridRail);
     }
 
     boolean setSupport(FrameStyle nextStyle, Player player) {
         var current=fixture();
         if (current==null || !(level instanceof ServerLevel server)) return false;
-        var proposed=layout(current,nextStyle);
+        boolean keepLegacyLayout = legacySupportLayout && support.kind() == nextStyle.kind();
+        var proposed = layout(current, nextStyle, clipped.mask(), keepLegacyLayout);
         if (!clipped.fits(this,proposed,player) || !wiring.validate(this,proposed,Vec3.ZERO,player)) return false;
         boolean circuitChanged=support.terminals()!=nextStyle.terminals();
         support = nextStyle;
+        legacySupportLayout = keepLegacyLayout;
         if (!support.terminals()) clipped.external=false;
         cachedFrame = proposed;
         growTerminals();
@@ -234,12 +242,10 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         return level instanceof ServerLevel server ? CatenaryLines.get(server).wireEnds(worldPosition) : List.of();
     }
 
-    public boolean adjust(boolean adjustHeight) { return adjust(adjustHeight, null); }
-
-    boolean adjust(boolean adjustHeight, @Nullable Player player) {
+    public boolean adjust(boolean adjustHeight) {
         int updatedHeight = adjustHeight ? height == 12 ? 4 : height + 1 : height;
         int updatedWidth = adjustHeight ? width : width == 13 ? 3 : width + 2;
-        return setClearance(updatedHeight, updatedWidth, player);
+        return setClearance(updatedHeight, updatedWidth, null);
     }
 
     boolean setClearance(int updatedHeight, int updatedWidth, @Nullable Player player) {
@@ -457,6 +463,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         tag.putInt("Height", height);
         tag.putInt("Width", width);
         support.write(tag);
+        tag.putBoolean("LegacySupportLayout", legacySupportLayout);
         wiring.write(tag);
         clipped.write(tag);
         if (headOffset != 0) tag.putInt("HeadOffset", headOffset);
@@ -482,9 +489,13 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         var oldHead=wireHead;
         int oldHeight=height, oldWidth=width, oldOffset=headOffset;
         boolean oldBridge=support.terminals() && !clipped.external;
+        boolean oldLegacyLayout = legacySupportLayout;
         support = FrameStyle.read(tag);
         if (clipped.read(tag)) cachedFrame=null;
         if (wiring.read(tag)) cachedFrame = null;
+        // Saved feed posts and tube connectors may already be wired at the old positions.
+        legacySupportLayout = tag.contains("LegacySupportLayout")
+                ? tag.getBoolean("LegacySupportLayout") : support.terminals() || !wiring.fittings().isEmpty();
         growTerminals();
         super.read(tag, registries, clientPacket);
         if(oldBridge!=(support.terminals() && !clipped.external) && getElectricBehaviour()!=null)
@@ -504,7 +515,8 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         if (clientPacket) wireHead = tag.contains("WireHead", Tag.TAG_COMPOUND)
                 ? CatenarySpan.Head.read(Vec3.atLowerCornerOf(worldPosition), tag.getCompound("WireHead")) : null;
         if (!oldSupport.equals(support) || oldMount!=mount || oldHeight!=height || oldWidth!=width
-                || oldOffset!=headOffset || !Objects.equals(oldHead,wireHead)) cachedFrame=null;
+                || oldOffset!=headOffset || oldLegacyLayout != legacySupportLayout
+                || !Objects.equals(oldHead,wireHead)) cachedFrame=null;
     }
 
 }

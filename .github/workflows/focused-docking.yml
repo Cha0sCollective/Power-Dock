@@ -33,7 +33,7 @@ jobs:
           mkdir -p build/ci-logs
           bash gradlew --no-daemon --console=plain "-PsableVersion=$SABLE_VERSION" runGameTestServer 2>&1 | tee build/ci-logs/base.log
           grep -Fq "Sable $SABLE_VERSION (sable)" build/ci-logs/base.log
-          grep -Fq 'All 8 required tests passed' build/ci-logs/base.log
+          grep -Fq 'All 10 required tests passed' build/ci-logs/base.log
       - name: Run the wired-network unload test
         shell: bash
         run: |

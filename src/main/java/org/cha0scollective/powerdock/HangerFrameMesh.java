@@ -14,27 +14,42 @@ final class HangerFrameMesh {
     private static final int PIXELS_PER_BLOCK = 16;
     private static final int TILE_HEIGHT = 64;
     private static final int MATERIAL_WIDTH = 64;
-    private static final int SHEET_WIDTH = 512;
+    private static final int SHEET_WIDTH = 1024;
+    private static final double JOINT_CLEARANCE = 1.0 / 1024;
     private static final RenderType INSULATION = RenderType.entityCutoutNoCull(
             ResourceLocation.parse("powergrid:textures/special/insulated_wire.png"));
     private final List<Quad> jackets = new ArrayList<>();
     private final List<Quad> faces = new ArrayList<>();
 
-    // Each material has native-width strips for faces one through ten pixels wide.
-    // A narrower face uses fewer texels, even on a fully extended mast.
+    // Each 64-pixel column group contains strips one through ten texels wide.
+    // Length still tiles at 16 texels per block, including on adjustable mounts.
     private enum Surface {
-        FLANGE, WEB, BRACE, PLATE, FASTENER, PORCELAIN, COPPER, CUT_END, JACKET;
+        FLANGE, WEB, BRACE, PLATE, FASTENER, PORCELAIN, COPPER, CUT_END,
+        PLATE_FACE, FASTENER_FACE, PORCELAIN_RIM, JACKET;
 
         static Surface of(HangerFrame.Member part) {
-            if (part.id().endsWith("/web")) return WEB;
+            var id = part.id();
+            if (id.endsWith("/web")) return WEB;
             return switch (part.color()) {
                 case HangerFrame.EDGE -> BRACE;
+                case HangerFrame.STEEL -> id.startsWith("tie-") || id.endsWith("-strut") || id.contains("/strap-")
+                        ? BRACE : FLANGE;
                 case HangerFrame.PLATE -> PLATE;
                 case HangerFrame.BOLT -> FASTENER;
                 case HangerFrame.CERAMIC -> PORCELAIN;
                 case HangerFrame.COPPER -> COPPER;
                 case ClippedRoute.INSULATION -> JACKET;
                 default -> FLANGE;
+            };
+        }
+
+        Surface end() {
+            return switch (this) {
+                case FLANGE, WEB, BRACE -> CUT_END;
+                case PLATE -> PLATE_FACE;
+                case FASTENER -> FASTENER_FACE;
+                case PORCELAIN -> PORCELAIN_RIM;
+                default -> this;
             };
         }
     }
@@ -45,12 +60,20 @@ final class HangerFrameMesh {
 
     private void addMember(HangerFrame.Member member) {
         var surface = Surface.of(member);
-        var end = surface == Surface.FLANGE || surface == Surface.WEB || surface == Surface.BRACE
-                ? Surface.CUT_END : surface;
-        var a = member.point(-1, -1, 0);
-        var b = member.point(1, -1, 0);
-        var c = member.point(1, 1, 0);
-        var d = member.point(-1, 1, 0);
+        var end = surface.end();
+        // These pieces overlap at the joints. Give their visible sides distinct
+        // planes without moving the fittings or changing the texture scale.
+        double inset = switch (member.id()) {
+            case "housing-clamp", "through-bolt" -> JOINT_CLEARANCE;
+            case "housing-neck" -> 2 * JOINT_CLEARANCE;
+            default -> 0;
+        };
+        double u = 1 - inset / member.halfU();
+        double v = 1 - inset / member.halfV();
+        var a = member.point(-u, -v, 0);
+        var b = member.point(u, -v, 0);
+        var c = member.point(u, v, 0);
+        var d = member.point(-u, v, 0);
         var travel = member.axis().scale(member.length());
         double width = 2 * member.halfU();
         double depth = 2 * member.halfV();

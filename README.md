@@ -2,13 +2,13 @@
 
 Power Dock connects Power Grid circuits between a Sable ship and a fixed station or between two Sable ships. The docks pull together, extend their arms, and transfer power in either direction.
 
-[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta5)
+[Download the stable release](https://github.com/Cha0sCollective/Power-Dock/releases/latest) · [Download the beta](https://github.com/Cha0sCollective/Power-Dock/releases/tag/v0.4.0-beta5-fixed)
 
 ## What you need
 
 Minecraft 1.21.1 with NeoForge 21.1.231 or newer, Create 6.0.10, Power Grid 0.6.2, Sable 2.0.5 or 2.0.6, and Architectury API. Install Power Dock on the server and on each client.
 
-Hover over a Power Dock, Rail Jumper, Catenary Hanger, or Pantograph in your inventory and hold the Ponder key (W by default) for a walkthrough. The hanger's chapters cover rail placement and clearance, linking with Power Grid Copper Wire, building and cutting loops, and connecting multiple feeders.
+Hover over a Power Dock, Rail Jumper, Catenary Hanger, or Pantograph in your inventory and hold the Ponder key (W by default) for a walkthrough. The hanger's chapters cover rail placement and clearance, clipped feeder leads, linking with Power Grid Copper Wire, building and cutting loops, and connecting multiple feeders.
 
 ## Crafting
 
@@ -63,6 +63,8 @@ Look for the amber rail outline beneath a hanger. Sneak-right-click that rail wi
 Wire a Power Grid supply to any hanger's positive and negative posts with normal right-clicks. Several supplies can feed one line. They share the load according to the voltage and resistance of the circuit, and unequal supplies can feed current into one another. Keep each supply you want to use, its wiring, and its hanger loaded. The rest of the overhead line can carry power through unloaded hanger chunks. When upgrading from beta2, load both hangers on each existing span once so the line can be saved independently of the chunks.
 
 New hangers start **Floating**. Build your own support against the crosspiece, or choose **Mount** in the rail settings. Choose a left- or right-hand **Cantilever pole** or **Wall bracket**, a **Square portal** across both sides, or a **Ceiling drop** beneath a roof. Side follows the saved track direction. Reach moves the mounting plate or foot. Adjust each portal foot separately on sloping ground. Existing beta4 hangers open as square portals.
+
+On straight rails that follow the block grid, pole and portal feet land at block centers, and wall and ceiling plates sit flush against full block faces. Older mounts with feed posts or wire connectors keep their layout until you change the mount preset.
 
 For a manual feed, hold a Power Grid **Wire Connector** and point at an exposed steel flange, web, or diagonal brace. The outline shows where it will sit. Right-click to fit it. Use normal PG wire clicks to route positive and negative through separate fittings to the two overhead posts. Each fitting is its own junction. Disconnect its wires and sneak-right-click with a wrench to recover it.
 

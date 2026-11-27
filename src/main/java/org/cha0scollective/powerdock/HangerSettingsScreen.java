@@ -4,14 +4,11 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Inventory;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
-import net.neoforged.neoforge.network.PacketDistributor;
 
 final class HangerSettingsScreen extends AbstractContainerScreen<HangerSettingsMenu> {
     private static final int TEXT = 0xfff3e9d9;
@@ -130,17 +127,6 @@ final class HangerSettingsScreen extends AbstractContainerScreen<HangerSettingsM
         @SubscribeEvent
         public static void register(RegisterMenuScreensEvent event) {
             event.register(PowerDock.HANGER_SETTINGS_MENU.get(), HangerSettingsScreen::new);
-        }
-    }
-
-    @EventBusSubscriber(modid = PowerDock.ID, value = Dist.CLIENT)
-    static final class RailClicks {
-        @SubscribeEvent
-        public static void useCurvedRail(PlayerInteractEvent.RightClickEmpty event) {
-            var player = event.getEntity();
-            if (event.getHand() == InteractionHand.MAIN_HAND && player.isShiftKeyDown() && player.getMainHandItem().isEmpty()) {
-                PacketDistributor.sendToServer(HangerRailControls.OpenFromRail.INSTANCE);
-            }
         }
     }
 }

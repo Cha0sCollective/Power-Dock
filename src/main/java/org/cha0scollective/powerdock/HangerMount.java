@@ -8,8 +8,12 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import org.patryk3211.powergrid.electricity.base.TerminalBoundingBox;
 
+import javax.annotation.Nullable;
+
 final class HangerMount {
     private static final double TERMINAL_INSET = 1.0 / 128;
+    private static final double GRID_DIRECTION_TOLERANCE = 1e-5;
+    private static final double GRID_POSITION_TOLERANCE = 1.0 / 1024;
     final Vec3 rail;
     final double yaw;
     final Vec3 housing;
@@ -41,6 +45,14 @@ final class HangerMount {
     }
 
     TerminalBoundingBox post(int index) { return posts[index]; }
+
+    @Nullable Vec3 gridRail() {
+        if (Math.min(Math.abs(across.x), Math.abs(across.z)) > GRID_DIRECTION_TOLERANCE) return null;
+        double x = Math.floor(rail.x) + .5;
+        double z = Math.floor(rail.z) + .5;
+        return Math.abs(rail.x - x) <= GRID_POSITION_TOLERANCE && Math.abs(rail.z - z) <= GRID_POSITION_TOLERANCE
+                ? new Vec3(x, rail.y, z) : null;
+    }
 
     CatenarySpan.Head wireHead(BlockPos pos, int height) {
         return new CatenarySpan.Head(Vec3.atLowerCornerOf(pos).add(rail).add(0, height, 0),

@@ -3,6 +3,7 @@
   "textures": {
     "particle": "powerdock:block/enclosure",
     "body": "powerdock:block/enclosure",
+    "panel": "powerdock:block/catenary_panel",
     "trim": "powergrid:block/conductive_casing",
     "steel": "powerdock:block/steel",
     "posts": "powergrid:block/device_connector",
@@ -55,16 +56,16 @@
       ],
       "faces": {
         "north": {
-          "texture": "#body"
+          "texture": "#panel"
         },
         "east": {
-          "texture": "#body"
+          "texture": "#panel"
         },
         "south": {
-          "texture": "#body"
+          "texture": "#panel"
         },
         "west": {
-          "texture": "#body"
+          "texture": "#panel"
         },
         "up": {
           "texture": "#body"

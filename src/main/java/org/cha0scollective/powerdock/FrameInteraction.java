@@ -50,6 +50,11 @@ final class FrameInteraction {
         }
     }
 
+    static Set<BlockPos> hangersInChunk(Level level, int chunkX, int chunkZ) {
+        var chunks = loaded.get(level);
+        return chunks == null ? Set.of() : chunks.getOrDefault(ChunkPos.asLong(chunkX, chunkZ), Set.of());
+    }
+
     static final int INSTALL = -2, CUT_FIRST = -3;
     static boolean connector(ItemStack stack) { return stack.is(ModdedBlocks.WIRE_CONNECTOR.asItem()); }
     private static boolean wrench(ItemStack stack) { return stack.is(AllItems.WRENCH.get()); }

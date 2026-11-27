@@ -11,10 +11,15 @@ import net.createmod.ponder.api.scene.SceneBuildingUtil;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.LeverBlock;
 import net.minecraft.world.phys.Vec3;
+
+import java.util.List;
+import java.util.UUID;
 
 import static org.cha0scollective.powerdock.PonderPresentation.explain;
 import static org.cha0scollective.powerdock.PonderPresentation.geometry;
@@ -80,7 +85,8 @@ final class OverheadPonders {
         var mount=HangerMount.fromTrack(hanger,rail,Direction.EAST);
         var head=mount.wireHead(hanger,initialHeight+2);
         var sample=new HangerFrame(new HangerFixture(head.center().subtract(origin),head.across(),
-                mount.housing.add(0,2,0),mount.rail.y,9),style,new Vec3(Math.cos(mount.yaw),0,-Math.sin(mount.yaw)));
+                mount.housing.add(0,2,0),mount.rail.y,9),style,new Vec3(Math.cos(mount.yaw),0,-Math.sin(mount.yaw)),
+                List.of(), 0, null, mount.gridRail());
         var target=first.body(sample).start().add(origin);
         scene.overlay().showControls(target,Pointing.RIGHT,36).rightClick().withItem(
                 new ItemStack(org.patryk3211.powergrid.collections.ModdedBlocks.WIRE_CONNECTOR.get()));
@@ -108,6 +114,74 @@ final class OverheadPonders {
         scene.overlay().showControls(foot.add(0,.7,0),Pointing.RIGHT,40).rightClick().withItem(linkingWire());
         explain(scene,foot.add(0,.7,0),"For a shorter hookup, enable Feed posts. Wire your supply to the positive and negative posts at the foot. Each feeds its matching overhead terminal.",118);
         scene.markAsFinished();
+    }
+
+    static void clippedLeads(SceneBuilder scene, SceneBuildingUtil util) {
+        open(scene, "catenary_clipped_leads", "Clipping Feeder Leads", 13, 0.76f);
+        var railPos = new BlockPos(3, 1, 4);
+        var rail = head(railPos, 0);
+        var height = HangerTrackTarget.INITIAL_HEIGHT;
+        scene.world().showSection(util.select().fromTo(1, 1, 4, 5, 1, 4), Direction.DOWN);
+        var hanger = mountHanger(scene, util, rail, height);
+        var selection = util.select().position(hanger);
+        var style = new FrameStyle(FrameStyle.Kind.CANTILEVER, 1, 0, 0, false);
+        scene.world().modifyBlockEntityNBT(selection, CatenaryHangerBlockEntity.class, style::write);
+        var mount = HangerMount.fromTrack(hanger, rail, Direction.EAST);
+        var origin = Vec3.atLowerCornerOf(hanger);
+        var head = mount.wireHead(hanger, height);
+        var fixture = new HangerFixture(head.center().subtract(origin), head.across(), mount.housing, mount.rail.y, 7);
+        var withPosts = style.change(14);
+        var frame = new HangerFrame(fixture, withPosts, head.across(), List.of(), 3,
+                new Vec3[]{mount.post(0).getOrigin(), mount.post(1).getOrigin()}, mount.gridRail());
+        var pole = frame.member("leg-right/flange-b").point(1, 0, .4).add(origin);
+        var arm = frame.member("boom").point(0, 1, .55).add(origin);
+        var footPost = frame.post(0).add(origin);
+
+        explain(scene, pole, "Choose a Cantilever pole or Square portal and start with Feed posts off.", 92);
+        var wire = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("powergrid:insulated_copper_wire")), 16);
+        scene.overlay().showControls(pole, Pointing.RIGHT, 38).rightClick().whileSneaking().withItem(wire);
+        scene.idle(14);
+        showClippedLeads(scene, util, hanger, 1);
+        explain(scene, pole, "Hold a stack of Insulated Copper Wire and sneak-right-click the pole or arm to fit the positive lead.", 103);
+
+        scene.overlay().showControls(arm, Pointing.DOWN, 40).rightClick().whileSneaking().withItem(wire);
+        scene.idle(14);
+        showClippedLeads(scene, util, hanger, 3);
+        explain(scene, arm, "Repeat for the negative lead. Both leads run up to their matching terminals.", 94);
+
+        var supply = new BlockPos(5, 1, 7);
+        var source = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("powergrid:creative_voltage_source"));
+        scene.world().setBlock(supply, source.defaultBlockState(), false);
+        scene.world().showSection(util.select().position(supply), Direction.DOWN);
+        scene.overlay().showControls(footPost, Pointing.RIGHT, 40).rightClick().withItem(wire);
+        scene.idle(14);
+        CatenaryNetworkPonders.drawFeed(scene, supply, hanger, 2);
+        explain(scene, footPost, "Use regular wire clicks to connect the supply to the matching positive and negative posts at the foot.", 102);
+
+        var clip = frame.member("clip-negative").point(0, 0, .5).add(origin);
+        var cutters = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("powergrid:wire_cutter")));
+        scene.overlay().showControls(clip, Pointing.RIGHT, 40).rightClick().withItem(cutters);
+        scene.idle(14);
+        showClippedLeads(scene, util, hanger, 1);
+        explain(scene, clip, "Right-click a lead or its clip with Power Grid Wire Cutters to remove just that lead.", 108);
+        scene.markAsFinished();
+    }
+
+    private static void showClippedLeads(SceneBuilder scene, SceneBuildingUtil util, BlockPos hanger, int mask) {
+        scene.world().modifyBlockEntityNBT(util.select().position(hanger), CatenaryHangerBlockEntity.class, tag -> {
+            tag.putBoolean("FeedPosts", true);
+            tag.putBoolean("ClippedFeed", true);
+            var leads = new ListTag();
+            for (int pin = 0; pin < 2; pin++) {
+                if ((mask & (1 << pin)) == 0) continue;
+                var lead = new CompoundTag();
+                lead.putInt("Pin", pin);
+                lead.putUUID("Wire", new UUID(0, pin + 1));
+                lead.putInt("Count", 1);
+                leads.add(lead);
+            }
+            tag.put("ClippedFeedWires", leads);
+        });
     }
 
     static void route(SceneBuilder scene, SceneBuildingUtil util) {
@@ -263,7 +337,8 @@ final class OverheadPonders {
         scene.world().showSection(util.select().position(pos), Direction.DOWN);
         var wires = head(pos, heightOffset).center();
         var fixture = new HangerFixture(wires, ACROSS, Vec3.atBottomCenterOf(pos), wires.y - 7, width);
-        var frame=new HangerFrame(fixture, FrameStyle.PORTAL, fixture.contactSpacing());
+        var frame=new HangerFrame(fixture, FrameStyle.PORTAL, fixture.contactSpacing(),
+                List.of(), 0, null, new Vec3(wires.x, fixture.railY(), wires.z));
         geometry(scene, (level, beams) -> CatenaryRenderer.drawFrame(beams, frame));
     }
 

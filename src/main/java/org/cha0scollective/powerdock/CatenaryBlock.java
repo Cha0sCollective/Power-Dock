@@ -3,7 +3,6 @@ package org.cha0scollective.powerdock;
 import com.simibubi.create.foundation.block.IBE;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -102,27 +101,14 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
-        if (!player.getMainHandItem().isEmpty()) return InteractionResult.PASS;
-        if (level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger) return useHanger(level, player, hanger);
+        if (!player.getMainHandItem().isEmpty()
+                || !(level.getBlockEntity(pos) instanceof PantographBlockEntity pickup)) return InteractionResult.PASS;
         if (!level.isClientSide && level.mayInteract(player, pos)) {
-            if (level.getBlockEntity(pos) instanceof PantographBlockEntity pickup) {
-                if (player.isShiftKeyDown() && player instanceof ServerPlayer serverPlayer) {
-                    PantographReceiverMenu.open(serverPlayer, pickup);
-                } else {
-                    pickup.toggleRaised();
-                }
+            if (player.isShiftKeyDown() && player instanceof ServerPlayer serverPlayer) {
+                PantographReceiverMenu.open(serverPlayer, pickup);
+            } else {
+                pickup.toggleRaised();
             }
-        }
-        return InteractionResult.sidedSuccess(level.isClientSide);
-    }
-
-    static InteractionResult useHanger(Level level, Player player, CatenaryHangerBlockEntity hanger) {
-        if (!player.getMainHandItem().isEmpty()) return InteractionResult.PASS;
-        if (!level.isClientSide && level.mayInteract(player, hanger.getBlockPos())) {
-            var message = hanger.adjust(player.isShiftKeyDown(), player)
-                    ? Component.translatable("message.powerdock.hanger_settings", hanger.width(), hanger.height())
-                    : Component.translatable("message.powerdock.hanger_blocked");
-            player.displayClientMessage(message, true);
         }
         return InteractionResult.sidedSuccess(level.isClientSide);
     }

@@ -3,6 +3,7 @@ package org.cha0scollective.powerdock;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -15,6 +16,9 @@ final class HangerFrame {
     static final int CERAMIC = 0xffccc5ac, COPPER = 0xffaa6748;
     static final Vec3 UP = new Vec3(0, 1, 0);
     private static final double PX = 1.0 / 16;
+    private static final double ANCHOR_THICKNESS = 2 * PX;
+    private static final double WALL_HALF_THICKNESS = 2 * PX;
+    private static final double FEED_PLATE_HALF_WIDTH = 5 * PX;
     final List<Member> members;
     private final Map<String, Member> beamEnvelopes = new HashMap<>();
     final Vec3 housing;
@@ -43,20 +47,25 @@ final class HangerFrame {
     }
 
     HangerFrame(HangerFixture fixture, FrameStyle style, Vec3 across, Collection<TubeFitting> existingFittings) {
-        this(fixture, style, across, existingFittings, 0, null);
+        this(fixture, style, across, existingFittings, 0, null, null);
     }
 
     HangerFrame(HangerFixture fixture, FrameStyle style, Vec3 across, Collection<TubeFitting> existingFittings,
-                int leadMask, Vec3[] headEnds) {
+                int leadMask, Vec3[] headEnds, @Nullable Vec3 gridRail) {
         housing = fixture.housing();
-        this.across = across.normalize();
+        var direction = across.normalize();
+        this.across = gridRail == null ? direction : new Vec3(Math.rint(direction.x), 0, Math.rint(direction.z));
         depth = new Vec3(-this.across.z, 0, this.across.x);
         var parts = new ArrayList<Member>();
         var center = fixture.crossbeamCenter();
         double half = fixture.width() * 0.5 + 0.1875;
+        // A portal spans whole block columns between the centers of its two feet.
+        double legDistance = gridRail == null ? half : Math.ceil(half);
+        var supportCenter = gridRail == null ? center : new Vec3(gridRail.x, center.y, gridRail.z);
+        double footY = gridRail == null ? fixture.railY() : Math.floor(gridRail.y + 1e-5);
         double tip = Math.max(0.625, fixture.contactSpacing().length() + 0.25);
-        var left = center.subtract(this.across.scale(half));
-        var right = center.add(this.across.scale(half));
+        var left = supportCenter.subtract(this.across.scale(legDistance));
+        var right = supportCenter.add(this.across.scale(legDistance));
         int side = style.side();
         double reach = style.reach(side);
         var shoulder = side < 0 ? left : right;
@@ -96,8 +105,8 @@ final class HangerFrame {
                 }
                 for (int sign : new int[]{-1, 1}) {
                     if (style.kind() == FrameStyle.Kind.CANTILEVER && sign != side) continue;
-                    var root = center.add(this.across.scale(half * sign));
-                    var foot = new Vec3(root.x, fixture.railY() - style.reach(sign), root.z);
+                    var root = sign < 0 ? left : right;
+                    var foot = new Vec3(root.x, footY - style.reach(sign), root.z);
                     var post = root.add(0, .4375, 0);
                     var inward = this.across.scale(-sign);
                     var beamSeat = root.add(0, .25, 0);
@@ -139,12 +148,14 @@ final class HangerFrame {
                 }
             }
             case WALL -> {
-                var wall = shoulder.add(this.across.scale(side * Math.max(-half + tip, reach)));
+                double wallDistance = gridRail == null ? half + Math.max(-half + tip, reach)
+                        : legDistance - .5 + reach - WALL_HALF_THICKNESS;
+                var wall = supportCenter.add(this.across.scale(side * wallDistance));
                 var inward = this.across.scale(-side);
                 var beamSeat = wall.add(0, .25, 0);
                 bracketArm(parts, beamSeat, center.subtract(this.across.scale(tip * side)).add(0, .25, 0),
                         inward, existingFittings);
-                add(parts,"wall-plate", wall.add(0, -.625, 0), wall.add(0, .5, 0), .3125, .125, PLATE, false);
+                add(parts,"wall-plate", wall.add(0, -.625, 0), wall.add(0, .5, 0), .3125, WALL_HALF_THICKNESS, PLATE, false);
                 for (int sideOfPlate : new int[]{-1, 1}) {
                     var row = wall.add(depth.scale(sideOfPlate * 3.5 * PX)).add(inward.scale(2 * PX));
                     anchorBolt(parts, row.add(0, -8 * PX, 0), inward);
@@ -155,12 +166,17 @@ final class HangerFrame {
                 var toe = center.lerp(wall, .4).add(0, .1875, 0);
                 kneeBrace(parts, "brace", heel, toe, inward, beamSeat.y, 2, 1.5, existingFittings);
                 feed = wall.add(depth.scale(.3125));
+                if (gridRail != null) feed = feed.add(inward.scale(FEED_PLATE_HALF_WIDTH - WALL_HALF_THICKNESS));
             }
             case CEILING -> {
-                var top = center.add(0, 1 + Math.max(0, style.rightReach()), 0);
+                var top = supportCenter.add(0, 1 + Math.max(0, style.rightReach()), 0);
+                if (gridRail != null) {
+                    // The underside of the ceiling touches the top of the plate.
+                    top = new Vec3(top.x, Math.ceil(top.y + ANCHOR_THICKNESS - 1e-5) - ANCHOR_THICKNESS, top.z);
+                }
                 boolean oldDrop = fitted(existingFittings, "drop");
                 double radius = oldDrop ? 2 * PX : PX;
-                add(parts, oldDrop ? "drop" : "drop-tube", center, top, radius, radius, STEEL, true);
+                add(parts, oldDrop ? "drop" : "drop-tube", supportCenter, top, radius, radius, STEEL, true);
                 anchorPlate(parts, top, -1);
                 collar(parts, "ceiling-shoe", top.add(0, -PX, 0), radius / PX, 1);
                 collar(parts, "drop-seat", center, 1.25, .75);
@@ -176,7 +192,8 @@ final class HangerFrame {
         postSpacing = this.across.scale(.125);
         feedPlate = style.terminals() ? feed : null;
         if (feedPlate != null) {
-            add(parts, "terminal-plate", feedPlate.add(0, -.1875, 0), feedPlate.add(0, .1875, 0), .09375, .3125, PLATE, false);
+            add(parts, "terminal-plate", feedPlate.add(0, -.1875, 0), feedPlate.add(0, .1875, 0),
+                    .09375, FEED_PLATE_HALF_WIDTH, PLATE, false);
             for (int sign : new int[]{-1, 1}) {
                 var screw = feedPlate.add(this.across.scale(sign * 3.5 * PX)).add(0, 2 * PX, 0).add(depth.scale(1.5 * PX));
                 add(parts, "terminal-screw", screw, screw.add(depth.scale(PX)), PX / 2, PX / 2, BOLT, false);
@@ -215,8 +232,8 @@ final class HangerFrame {
     private void anchorPlate(List<Member> parts, Vec3 origin, int facing) {
         var outward = UP.scale(facing);
         // At the ceiling the underside carries the bolt heads.
-        var face = facing == 1 ? origin.add(0, 2 * PX, 0) : origin;
-        add(parts, "anchor-plate", face.subtract(outward.scale(2 * PX)), face, 5 * PX, 5 * PX, PLATE, false);
+        var face = facing == 1 ? origin.add(0, ANCHOR_THICKNESS, 0) : origin;
+        add(parts, "anchor-plate", face.subtract(outward.scale(ANCHOR_THICKNESS)), face, 5 * PX, 5 * PX, PLATE, false);
         for (int x : new int[]{-1, 1}) for (int z : new int[]{-1, 1}) {
             anchorBolt(parts, face.add(across.scale(x * 3.5 * PX)).add(depth.scale(z * 3.5 * PX)), outward);
         }

@@ -172,13 +172,17 @@ final class CatenaryNetworkPonders {
     private static void addFeed(SceneBuilder scene, BlockPos supply, BlockPos hanger, ItemStack wire) {
         scene.overlay().showControls(hanger.getCenter(), Pointing.DOWN, 38).rightClick().withItem(wire);
         scene.idle(12);
+        drawFeed(scene, supply, hanger, 0);
+    }
+
+    static void drawFeed(SceneBuilder scene, BlockPos supply, BlockPos hanger, int firstHangerPin) {
         geometry(scene, (level, beams) -> {
             var state = level.getBlockState(supply);
             if (!(state.getBlock() instanceof IElectric source)
                     || !(level.getBlockEntity(hanger) instanceof CatenaryHangerBlockEntity endpoint)) return;
             for (int pin = 0; pin < 2; pin++) {
                 var supplyPost = source.terminal(state, pin);
-                var hangerPost = endpoint.terminal(level.getBlockState(hanger), pin);
+                var hangerPost = endpoint.terminal(level.getBlockState(hanger), firstHangerPin + pin);
                 if (supplyPost == null || hangerPost == null) continue;
                 var from = Vec3.atLowerCornerOf(supply).add(supplyPost.getOrigin());
                 var to = Vec3.atLowerCornerOf(hanger).add(hangerPost.getOrigin());
