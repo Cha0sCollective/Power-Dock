@@ -5,7 +5,6 @@ import com.simibubi.create.content.trains.track.ITrackBlock;
 import dev.ryanhcode.sable.Sable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
@@ -115,7 +114,7 @@ record HangerTrackTarget(BlockPos rail, CatenarySpan.Head frame) {
     }
 
     BlockPos overheadPosition() {
-        return rail.atY(Mth.floor(frame.center().y + INITIAL_HEIGHT + HangerFixture.BEAM_RISE));
+        return rail.atY(HangerFixture.headY(frame.center().y + INITIAL_HEIGHT));
     }
 
     @Nullable

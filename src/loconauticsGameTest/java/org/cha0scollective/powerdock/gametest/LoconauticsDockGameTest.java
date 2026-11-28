@@ -87,9 +87,11 @@ public final class LoconauticsDockGameTest {
             var train = SableTrainSpawner.assembleAt(level, bogey, new Vec3(1, 0, 0), null, "Power Dock test");
             test.assertTrue(train != null && !train.car().bogeys().isEmpty(), "Loconautics could not seat the carriage");
             train.poseTweak().setOffset(offset.x, offset.y, offset.z);
-            train.poseTweak().snap();
+            // Let the carriage settle into the large side offset without jolting the wheel supports.
+            if (!pinDock) train.poseTweak().snap();
             carriage[0] = train;
             trainBody[0] = (ServerSubLevel) SubLevelContainer.getContainer(level).getSubLevel(train.car().subLevelId());
+            if (pinDock) parked[0] = dockCenter(trainBody[0]);
             if (shipToTrain) {
                 level.setBlockAndUpdate(stationPower, Blocks.STONE.defaultBlockState());
                 for (var floor : List.of(station.below(), stationPower.below())) {
@@ -102,7 +104,14 @@ public final class LoconauticsDockGameTest {
         });
         test.runAtTickTime(58, () -> {
             assertOnRails(test, trainBody[0], "before arming");
-            parked[0] = dockCenter(trainBody[0]);
+            var settled = dockCenter(trainBody[0]);
+            if (pinDock) {
+                var difference = settled.subtract(parked[0]).subtract(offset);
+                test.assertTrue(Math.abs(difference.x) < 1.0 / 32 && Math.abs(difference.y) < 1.0 / 64
+                                && Math.abs(difference.z) < 1.0 / 256,
+                        "The rail-guided carriage did not reach the intended side offset: " + difference);
+            }
+            parked[0] = settled;
             if (shipToTrain) shipParked[0] = ship[0].logicalPose().transformPosition(counterpart[0].getCenter());
             if (pinDock) level.setBlockAndUpdate(blocker, Blocks.STONE.defaultBlockState());
             level.setBlockAndUpdate(counterpart[0].relative(facing), Blocks.REDSTONE_BLOCK.defaultBlockState());

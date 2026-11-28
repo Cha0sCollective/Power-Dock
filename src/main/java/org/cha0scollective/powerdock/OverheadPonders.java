@@ -74,7 +74,7 @@ final class OverheadPonders {
         var custom=util.select().fromTo(sill,cap).add(util.select().fromTo(cap,cap.north(2)));
         scene.world().setBlocks(custom,net.minecraft.world.level.block.Blocks.POLISHED_ANDESITE.defaultBlockState(),false);
         scene.world().showSection(custom,Direction.DOWN);
-        explain(scene,cap.getCenter(),"Mount starts on Floating. Build a support up to the short crosspiece, or choose a mount in Hanger Settings.",105);
+        explain(scene,cap.getCenter(),"Mount starts on Floating. Build against the top of the crossbar, or choose a mount in Hanger Settings.",105);
         scene.world().hideSection(custom,Direction.UP);
         var style=new FrameStyle(FrameStyle.Kind.CANTILEVER,1,0,0,false);
         scene.world().modifyBlockEntityNBT(util.select().position(hanger),CatenaryHangerBlockEntity.class,style::write);
@@ -188,14 +188,14 @@ final class OverheadPonders {
         open(scene, "catenary_route", "Linking Hangers with Copper Wire", 11, 0.61f);
         scene.setSceneOffsetY(-1.1f);
         scene.world().showSection(util.select().fromTo(1, 1, 5, 9, 1, 5), Direction.DOWN);
-        showHanger(scene, util, FIRST_HANGER, 0, 7);
-        showHanger(scene, util, LAST_HANGER, 0, 7);
+        showHanger(scene, util, FIRST_HANGER, HangerFixture.FIXTURE_LIFT, 7);
+        showHanger(scene, util, LAST_HANGER, HangerFixture.FIXTURE_LIFT, 7);
         var wire = linkingWire();
         scene.overlay().showControls(FIRST_HANGER.getCenter(), Pointing.DOWN, 40).rightClick().whileSneaking().withItem(wire);
         explain(scene, FIRST_HANGER.getCenter(), "Hold bare Power Grid Copper Wire. Sneak-right-click either hanger to start from that end.", 84);
 
-        var first = head(FIRST_HANGER, 0);
-        var last = head(LAST_HANGER, 0);
+        var first = head(FIRST_HANGER, HangerFixture.FIXTURE_LIFT);
+        var last = head(LAST_HANGER, HangerFixture.FIXTURE_LIFT);
         scene.overlay().showControls(LAST_HANGER.getCenter(), Pointing.DOWN, 40).rightClick().whileSneaking().withItem(wire);
         scene.idle(12);
         previewWire(scene, first, last, 106);
@@ -247,7 +247,7 @@ final class OverheadPonders {
     }
 
     static BlockPos mountHanger(SceneBuilder scene, SceneBuildingUtil util, CatenarySpan.Head rail, int height) {
-        var pos = BlockPos.containing(rail.center().add(0, height + HangerFixture.BEAM_RISE, 0));
+        var pos = BlockPos.containing(rail.center()).atY(HangerFixture.headY(rail.center().y + height));
         var mount = HangerMount.fromTrack(pos, rail, Direction.EAST);
         scene.world().modifyBlockEntityNBT(util.select().position(pos), CatenaryHangerBlockEntity.class, tag -> {
             var placement = new CompoundTag();

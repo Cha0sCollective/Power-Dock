@@ -120,6 +120,11 @@ public final class CurvedHangerSettingsGameTest {
         }
         test.assertTrue(hanger.height() == 6, "Settings changed the wrong hanger");
         test.assertTrue(!hanger.headPosition().equals(anchor), "The test needs a separate raised feeder head");
+        var beam = hanger.fixture().crossbeamCenter();
+        test.assertTrue(beam.y + anchor.getY() + 1.0 / 16 == hanger.headPosition().getY() + 1
+                        && level.getBlockState(hanger.headPosition()).getShape(level, hanger.headPosition())
+                        .max(Direction.Axis.Y) == 1,
+                "The raised curved crossbar or its outline left the block boundary");
         verifyFeederClickDoesNotAdjust(test, editor, hanger);
         var unmounted = curve.getPosition(0.25);
         editor.setPos(unmounted.add(0, 0, -2));

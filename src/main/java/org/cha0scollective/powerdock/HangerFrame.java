@@ -69,22 +69,23 @@ final class HangerFrame {
         int side = style.side();
         double reach = style.reach(side);
         var shoulder = side < 0 ? left : right;
-        var core = fixture.insulatorTop(center, -1);
-        var other = fixture.insulatorTop(center, 1);
         boolean oldHead = fitted(existingFittings, "head");
-        double spreaderRadius = oldHead ? 2 * PX : PX;
+        var spreader = oldHead ? center.add(0, -PX, 0) : center;
+        var core = fixture.insulatorTop(spreader, -1);
+        var other = fixture.insulatorTop(spreader, 1);
+        double spreaderRadius = oldHead ? 2 * PX : HangerFixture.CROSSBAR_HALF_HEIGHT;
         var headOverhang = fixture.contactSpacing().normalize().scale(oldHead ? 3 * PX : PX);
         add(parts, oldHead ? "head" : "spreader", core.subtract(headOverhang),
                 other.add(headOverhang), spreaderRadius, spreaderRadius, STEEL, true);
-        var joint = fixture.housingJoint(center);
-        var upper = new Vec3(joint.x, center.y, joint.z);
+        var joint = fixture.housingJoint(spreader);
+        var upper = new Vec3(joint.x, spreader.y, joint.z);
         add(parts, "housing-neck", joint, upper, PX, PX, STEEL, false);
-        var headJoint = fixture.beamJoint(center);
+        var headJoint = fixture.beamJoint(spreader);
         add(parts, "housing-clamp", upper, headJoint, PX, PX, STEEL, false);
         collar(parts, "box-saddle", joint, 1.5, .5);
         for (int sign : new int[]{-1, 1}) {
             var low = fixture.insulatorBottom(sign);
-            var insulatorTop = fixture.insulatorTop(center, sign);
+            var insulatorTop = fixture.insulatorTop(spreader, sign);
             add(parts, "insulator", low, insulatorTop, .065, .065, CERAMIC, false);
             collar(parts, "insulator-seat", insulatorTop, 1.25, .5);
             for (int ring = 1; ring <= 3; ring++) {
@@ -171,22 +172,23 @@ final class HangerFrame {
             case CEILING -> {
                 var top = supportCenter.add(0, 1 + Math.max(0, style.rightReach()), 0);
                 if (gridRail != null) {
-                    // The underside of the ceiling touches the top of the plate.
-                    top = new Vec3(top.x, Math.ceil(top.y + ANCHOR_THICKNESS - 1e-5) - ANCHOR_THICKNESS, top.z);
+                    // Keep the plate flush on the underside of the ceiling block at the selected reach.
+                    double ceiling = fixture.housing().y + 2 + Math.max(0, style.rightReach());
+                    top = new Vec3(top.x, ceiling - ANCHOR_THICKNESS, top.z);
                 }
                 boolean oldDrop = fitted(existingFittings, "drop");
                 double radius = oldDrop ? 2 * PX : PX;
-                add(parts, oldDrop ? "drop" : "drop-tube", supportCenter, top, radius, radius, STEEL, true);
+                add(parts, oldDrop ? "drop" : "drop-tube", fixture.crossbeamTop(), top, radius, radius, STEEL, true);
                 anchorPlate(parts, top, -1);
                 collar(parts, "ceiling-shoe", top.add(0, -PX, 0), radius / PX, 1);
-                collar(parts, "drop-seat", center, 1.25, .75);
+                collar(parts, "drop-seat", fixture.crossbeamTop().add(0, PX, 0), 1.25, .75);
                 feed = top.add(0, -.3, 0).add(depth.scale(.125));
             }
             case FLOATING -> {}
         }
         if (style.kind() == FrameStyle.Kind.PORTAL || style.kind() == FrameStyle.Kind.CANTILEVER
                 || style.kind() == FrameStyle.Kind.WALL) {
-            add(parts, "head-drop", center, center.add(0, .25, 0), PX, PX, STEEL, false);
+            add(parts, "head-drop", fixture.crossbeamTop(), center.add(0, .25, 0), PX, PX, STEEL, false);
             collar(parts, "head-clamp", center.add(0, .25, 0), style.kind() == FrameStyle.Kind.PORTAL ? 3 : 1, .75);
         }
         postSpacing = this.across.scale(.125);

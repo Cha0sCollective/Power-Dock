@@ -219,7 +219,7 @@ final class CatenaryWireUse {
                 data.putLong("Preview", token);
                 var geometry = new CompoundTag();
                 geometry.putBoolean("Conflict", true);
-                showPreview(player, token, List.of(CatenarySpan.create(clicked, plan.route(), first.height(), hit.height())), geometry);
+                showPreview(player, token, List.of(CatenarySpan.createAligned(clicked, plan.route(), first.height(), hit.height())), geometry);
             }
             saveSelection(item, root, data);
             report(player, plan.error());

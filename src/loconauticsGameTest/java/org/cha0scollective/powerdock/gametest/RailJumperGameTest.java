@@ -387,10 +387,13 @@ public final class RailJumperGameTest {
                     .map(level::getBlockEntity).filter(CatenaryHangerBlockEntity.class::isInstance)
                     .map(CatenaryHangerBlockEntity.class::cast).findFirst().orElse(null);
             test.assertTrue(hanger != null, "Placement did not put a hanger above the targeted " + section + " near " + expected);
+            // Normal interaction happens after the new hanger has registered in the spatial index.
+            hanger.tick();
             var anchor = hanger.getBlockPos();
             var oldHead = hanger.headPosition();
             test.assertTrue(hanger.height() == 4 && oldHead.equals(anchor), "The hanger did not start at four blocks");
-            var mountedRail = Vec3.atLowerCornerOf(anchor).add(hanger.fixture().wireCenter()).add(0, -hanger.height(), 0);
+            var fixture = hanger.fixture();
+            var mountedRail = Vec3.atLowerCornerOf(anchor).add(fixture.wireCenter().x, fixture.railY(), fixture.wireCenter().z);
             test.assertTrue(aim.distanceToSqr(mountedRail) < 0.75 * 0.75, "The hanger snapped away from the aimed rail at " + aim);
             verifyHangerAlignment(section, hanger);
             test.assertTrue(ground.entrySet().stream().allMatch(entry -> level.getBlockState(entry.getKey()).equals(entry.getValue())),
@@ -419,17 +422,24 @@ public final class RailJumperGameTest {
             };
             editor.setPos(player.position());
             editor.setShiftKeyDown(true);
-            var look = aim.subtract(editor.getEyePosition());
+            // Curves highlight the saved mount's section of track after placement.
+            var look = (curved ? mountedRail : aim).subtract(editor.getEyePosition());
             editor.setYRot((float) Math.toDegrees(Math.atan2(look.z, look.x)) - 90);
             editor.setYHeadRot(editor.getYRot());
             editor.setXRot((float) -Math.toDegrees(Math.atan2(look.y, look.horizontalDistance())));
-            var use = new PlayerInteractEvent.RightClickBlock(editor, InteractionHand.MAIN_HAND, rail, railHit);
-            NeoForge.EVENT_BUS.post(use);
+            boolean handled;
+            if (curved) {
+                handled = openCurvedRailSettings(editor);
+            } else {
+                var use = new PlayerInteractEvent.RightClickBlock(editor, InteractionHand.MAIN_HAND, rail, railHit);
+                NeoForge.EVENT_BUS.post(use);
+                handled = use.isCanceled();
+            }
             var seen = editor.pick(editor.blockInteractionRange(), 1, false);
-            test.assertTrue(use.isCanceled() && editor.containerMenu != editor.inventoryMenu
+            test.assertTrue(handled && editor.containerMenu != editor.inventoryMenu
                             && ResourceLocation.parse("powerdock:hanger_settings").equals(BuiltInRegistries.MENU.getKey(editor.containerMenu.getType())),
                     "Sneak-right-click did not open hanger settings over the " + section
-                            + ": canceled=" + use.isCanceled() + ", hit=" + seen.getType() + " " + seen.getLocation()
+                            + ": handled=" + handled + ", hit=" + seen.getType() + " " + seen.getLocation()
                             + ", sneak=" + editor.isShiftKeyDown() + ", mounted=" + (hanger.fixture() != null));
             var menu = editor.containerMenu;
             test.assertTrue(menu.clickMenuButton(editor, 1) && menu.clickMenuButton(editor, 3), "The settings did not accept adjustment");
@@ -461,6 +471,18 @@ public final class RailJumperGameTest {
             test.assertTrue(level.getBlockState(anchor).isAir() && level.getBlockState(movedHead).isAir(),
                     "Removing the raised head orphaned the control");
             System.out.println("CATENARY_RAIL_AIM " + section + " placement, menu, terminal picking and cleanup passed");
+        }
+
+        private static boolean openCurvedRailSettings(ServerPlayer editor) {
+            // A Create curve is a vanilla ray miss. The client sends the rail packet instead of a block-use event.
+            try {
+                var controls = Class.forName("org.cha0scollective.powerdock.HangerRailControls");
+                var open = controls.getDeclaredMethod("openAtRail", ServerPlayer.class, boolean.class);
+                open.setAccessible(true);
+                return (boolean) open.invoke(null, editor, true);
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("Could not invoke the curved rail packet handler", failure);
+            }
         }
 
         private UseOnContext terminalContext(net.minecraft.world.entity.player.Player player, BlockPos head, Vec3 contact) {

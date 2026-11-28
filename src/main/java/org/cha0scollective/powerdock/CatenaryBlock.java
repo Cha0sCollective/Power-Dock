@@ -36,6 +36,7 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
     static final BooleanProperty CONNECTED = PowerDockBlock.CONNECTED;
     static final BooleanProperty TRACK_ALIGNED = BooleanProperty.create("track_aligned");
     static final VoxelShape CASE = Block.box(2, 0, 2, 14, 5, 14);
+    static final VoxelShape HANGER_CASE = CASE.move(0, HangerFixture.FIXTURE_LIFT, 0);
     private static final RotatedTerminalCollection POSTS =
             RotatedTerminalCollection.builder(RotatedTerminalCollection::rotateNorthToFacing)
                     .with(Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST)
@@ -43,6 +44,12 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
                                     3, 5, 11, 6, 7, 14).withColor(IDecoratedTerminal.RED),
                             new TerminalBoundingBox(IDecoratedTerminal.NEGATIVE,
                                     10, 5, 11, 13, 7, 14).withColor(IDecoratedTerminal.BLUE))
+                    .build();
+    private static final RotatedTerminalCollection HANGER_POSTS =
+            RotatedTerminalCollection.builder(RotatedTerminalCollection::rotateNorthToFacing)
+                    .with(Direction.NORTH, Direction.EAST, Direction.SOUTH, Direction.WEST)
+                    .add(POSTS.get(Direction.NORTH, 0).offset(0, HangerFixture.FIXTURE_LIFT, 0),
+                            POSTS.get(Direction.NORTH, 1).offset(0, HangerFixture.FIXTURE_LIFT, 0))
                     .build();
     private final Class<T> type;
     private final Supplier<BlockEntityType<T>> blockEntityType;
@@ -84,20 +91,24 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         if (state.getValue(TRACK_ALIGNED) && level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger
-                && hanger.mount() != null) return hanger.hasRaisedHead() ? Shapes.empty() : hanger.mount().shape;
+                && hanger.mount() != null) return hanger.hasRaisedHead() ? Shapes.empty() : hanger.mount().outline;
         var facing = state.getValue(BlockStateProperties.HORIZONTAL_FACING);
+        if (type == CatenaryHangerBlockEntity.class) {
+            return Shapes.or(HANGER_CASE, hangerPost(facing, 0).getShape(), hangerPost(facing, 1).getShape());
+        }
         return Shapes.or(CASE, POSTS.get(facing, 0).getShape(), POSTS.get(facing, 1).getShape());
     }
 
     @Override
     protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        if (level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger && hanger.hasRaisedHead()) {
-            return Shapes.empty();
+        if (level.getBlockEntity(pos) instanceof CatenaryHangerBlockEntity hanger) {
+            if (hanger.hasRaisedHead()) return Shapes.empty();
+            if (state.getValue(TRACK_ALIGNED) && hanger.mount() != null) return hanger.mount().shape;
         }
         return super.getCollisionShape(state, level, pos, context);
     }
 
-    static TerminalBoundingBox post(Direction facing, int index) { return POSTS.get(facing, index); }
+    static TerminalBoundingBox hangerPost(Direction facing, int index) { return HANGER_POSTS.get(facing, index); }
 
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
@@ -117,7 +128,8 @@ final class CatenaryBlock<T extends ElectricBlockEntity> extends ElectricBlock i
 
     @Override
     public ITerminalPlacement terminal(BlockState state, int index) {
-        return index >= 0 && index < 2 ? POSTS.get(state.getValue(BlockStateProperties.HORIZONTAL_FACING), index) : null;
+        var posts = type == CatenaryHangerBlockEntity.class ? HANGER_POSTS : POSTS;
+        return index >= 0 && index < 2 ? posts.get(state.getValue(BlockStateProperties.HORIZONTAL_FACING), index) : null;
     }
 
     @Override public Class<T> getBlockEntityClass() { return type; }

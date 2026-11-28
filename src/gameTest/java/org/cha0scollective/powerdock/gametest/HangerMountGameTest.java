@@ -46,6 +46,7 @@ public final class HangerMountGameTest {
         mount.putDouble("Y", -3.5);
         mount.putDouble("Z", .5);
         data.put("Mount", mount);
+        data.putInt("HeadOffset", 4);
         data.putInt("LeftReach", 1);
         data.putInt("RightReach", 2);
         data.putBoolean("FeedPosts", true);
@@ -60,6 +61,7 @@ public final class HangerMountGameTest {
                 data.putInt("Width", width);
                 data.putString("Support", "PORTAL");
                 hanger.loadWithComponents(data, registries);
+                assertMountStartsAboveCrossbar(test, hanger, "head-drop");
                 var feet = bounds(hanger, "anchor-plate");
                 test.assertTrue(feet.size() == 2, "Expected two portal footplates");
                 assertFoot(test, feet.getFirst(), rail.add(across.scale(-distance)).add(0, -1, 0));
@@ -69,6 +71,7 @@ public final class HangerMountGameTest {
                     data.putInt("SupportSide", side);
                     data.putString("Support", "CANTILEVER");
                     hanger.loadWithComponents(data, registries);
+                    assertMountStartsAboveCrossbar(test, hanger, "head-drop");
                     int reach = side < 0 ? 1 : 2;
                     var outward = across.scale(side);
                     assertFoot(test, bounds(hanger, "anchor-plate").getFirst(),
@@ -76,6 +79,7 @@ public final class HangerMountGameTest {
 
                     data.putString("Support", "WALL");
                     hanger.loadWithComponents(data, registries);
+                    assertMountStartsAboveCrossbar(test, hanger, "head-drop");
                     double wall = rail.dot(outward) + distance - .5 + reach;
                     for (String plate : new String[]{"wall-plate", "terminal-plate"}) {
                         var box = bounds(hanger, plate).getFirst();
@@ -90,6 +94,7 @@ public final class HangerMountGameTest {
             }
             data.putString("Support", "CEILING");
             hanger.loadWithComponents(data, registries);
+            assertMountStartsAboveCrossbar(test, hanger, "drop-tube");
             var plate = bounds(hanger, "anchor-plate").getFirst();
             test.assertTrue(plate.getCenter().x == .5 && plate.getCenter().z == .5 && plate.maxY == 8,
                     "The ceiling plate should sit against the underside of a centered block");
@@ -137,6 +142,20 @@ public final class HangerMountGameTest {
                 "Could not place the hanger on a straight Create rail");
         var hanger = (CatenaryHangerBlockEntity) level.getBlockEntity(rail.above(4));
         test.assertTrue(hanger != null, "Missing hanger over the selected track");
+        var head = hanger.headPosition();
+        var face = Vec3.atBottomCenterOf(head.above());
+        var outline = level.getBlockState(head).getShape(level, head);
+        var crossbarHit = outline.clip(face.add(0, .5, 0), face.add(0, -.25, 0), head);
+        test.assertTrue(crossbarHit != null && crossbarHit.getDirection() == Direction.UP
+                        && crossbarHit.getLocation().distanceToSqr(face) < 1e-8,
+                "The crossbar must be selectable at the block boundary");
+        var stone = new ItemStack(Blocks.STONE);
+        player.setItemInHand(InteractionHand.MAIN_HAND, stone);
+        test.assertTrue(stone.useOn(new UseOnContext(player, InteractionHand.MAIN_HAND, crossbarHit)).consumesAction()
+                        && level.getBlockState(head.above()).is(Blocks.STONE),
+                "Could not place a block directly against the original crossbar");
+        test.assertTrue(bounds(hanger, "spreader").getFirst().maxY == 1, "The rendered crossbar leaves a gap");
+        level.removeBlock(head.above(), false);
         var data = hanger.saveWithoutMetadata(level.registryAccess());
         data.putString("Support", "PORTAL");
         hanger.loadWithComponents(data, level.registryAccess());
@@ -146,6 +165,14 @@ public final class HangerMountGameTest {
         assertFoot(test, feet.getFirst().getCenter().z > 0 ? feet.getFirst() : feet.getLast(), south);
         assertFoot(test, feet.getFirst().getCenter().z < 0 ? feet.getFirst() : feet.getLast(), north);
         level.setChunkForced(chunk.x, chunk.z, false);
+    }
+
+    private static void assertMountStartsAboveCrossbar(GameTestHelper test, CatenaryHangerBlockEntity hanger, String part)
+            throws ReflectiveOperationException {
+        double top = bounds(hanger, "spreader").getFirst().maxY;
+        test.assertTrue(top == hanger.headPosition().getY() - hanger.getBlockPos().getY() + 1
+                        && bounds(hanger, part).getFirst().minY == top,
+                "The " + part + " should start at the top of the crossbar in the block above");
     }
 
     private static void assertFoot(GameTestHelper test, AABB foot, Vec3 target) {

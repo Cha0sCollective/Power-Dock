@@ -6,7 +6,6 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
@@ -84,7 +83,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     public ITerminalPlacement terminal(BlockState state, int index) {
         if (index < 0 || index >= terminalCount()) return null;
         if (index >= 2) return wiring.terminal(frame(), index);
-        if (mount == null) return CatenaryBlock.post(state.getValue(BlockStateProperties.HORIZONTAL_FACING), index);
+        if (mount == null) return CatenaryBlock.hangerPost(state.getValue(BlockStateProperties.HORIZONTAL_FACING), index);
         return headOffset == 0 ? mount.post(index) : mount.post(index).offset(0, headOffset, 0);
     }
 
@@ -109,7 +108,11 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         FrameInteraction.track(this,true);
         if (level instanceof ServerLevel server) {
             synchronizeLinks(CatenaryLines.get(server));
-            if (mount != null && moveHead(server, offsetAtHeight(height), null)) sendData();
+            if (mount != null) {
+                int previousOffset = headOffset;
+                if (moveHead(server, offsetAtHeight(height), null)) sendData();
+                if (headOffset == previousOffset) refreshPowerConnections(server);
+            }
         }
         alignOnPlacement();
     }
@@ -141,7 +144,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
     }
 
     private int offsetAtHeight(int clearance) {
-        return Mth.floor(mount.rail.y + clearance + HangerFixture.BEAM_RISE);
+        return HangerFixture.headY(mount.rail.y + clearance);
     }
 
     private boolean moveHead(ServerLevel server, int offset, @Nullable Player player) {
@@ -199,7 +202,7 @@ public final class CatenaryHangerBlockEntity extends ElectricBlockEntity impleme
         Vec3[] ends = null;
         if (mask != 0) {
             ends = new Vec3[2];
-            for (int i=0;i<2;i++) ends[i] = mount == null ? CatenaryBlock.post(getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING), i).getOrigin()
+            for (int i=0;i<2;i++) ends[i] = mount == null ? CatenaryBlock.hangerPost(getBlockState().getValue(BlockStateProperties.HORIZONTAL_FACING), i).getOrigin()
                     : mount.post(i).getOrigin().add(fixture.housing().subtract(mount.housing));
         }
         var gridRail = mount == null || legacyLayout ? null : mount.gridRail();

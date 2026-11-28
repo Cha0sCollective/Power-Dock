@@ -294,7 +294,7 @@ final class CatenaryNetwork {
         for (var run : layout) {
             var rail = run.rail();
             if (rail.size() < 2) continue;
-            var span = CatenarySpan.create(BlockPos.containing(run.to().rail()), rail, run.departure(), run.arrival(),
+            var span = CatenarySpan.createAligned(BlockPos.containing(run.to().rail()), rail, run.departure(), run.arrival(),
                     run.from().height(), run.to().height());
             geometry.put(run, span);
             adjacent.computeIfAbsent(run.from(), unused -> new ArrayList<>()).add(new End(run, true));

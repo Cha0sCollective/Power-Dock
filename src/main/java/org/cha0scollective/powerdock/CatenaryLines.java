@@ -277,7 +277,10 @@ final class CatenaryLines extends SavedData {
 
     @Nullable CatenarySpan.Head hangerHead(BlockPos pos) {
         for (var link : attached(pos)) {
-            if (link.active) return link.from.equals(pos) ? link.span.points.getFirst() : link.span.points.getLast();
+            if (link.active) {
+                var head = link.from.equals(pos) ? link.span.points.getFirst() : link.span.points.getLast();
+                return head.alignToHanger();
+            }
         }
         return null;
     }

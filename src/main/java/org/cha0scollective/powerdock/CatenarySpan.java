@@ -67,12 +67,26 @@ final class CatenarySpan {
     BlockPos origin() { return end; }
     Set<Long> chunks() { return chunks; }
 
+    // Saved links use the nominal clearance to check that their original track route still exists.
     static CatenarySpan create(BlockPos end, CatenaryRoute.Route path, int startHeight, int endHeight) {
         return create(end, path.points(), path.direction(true), path.direction(false), startHeight, endHeight);
     }
 
-    static CatenarySpan create(BlockPos end, List<Vec3> route, Vec3 startDirection, Vec3 endDirection,
-                               int startHeight, int endHeight) {
+    static CatenarySpan createAligned(BlockPos end, CatenaryRoute.Route path, int startHeight, int endHeight) {
+        return createAligned(end, path.points(), path.direction(true), path.direction(false), startHeight, endHeight);
+    }
+
+    static CatenarySpan createAligned(BlockPos end, List<Vec3> route, Vec3 startDirection, Vec3 endDirection,
+                                      int startHeight, int endHeight) {
+        double startRailY = route.getFirst().y;
+        double endRailY = route.getLast().y;
+        return create(end, route, startDirection, endDirection,
+                HangerFixture.wireY(startRailY + startHeight) - startRailY,
+                HangerFixture.wireY(endRailY + endHeight) - endRailY);
+    }
+
+    private static CatenarySpan create(BlockPos end, List<Vec3> route, Vec3 startDirection, Vec3 endDirection,
+                                       double startHeight, double endHeight) {
         var points = new ArrayList<Head>(route.size());
         double total = 0;
         for (int i = 1; i < route.size(); i++) total += route.get(i).distanceTo(route.get(i - 1));
@@ -203,6 +217,10 @@ final class CatenarySpan {
         static Head along(Vec3 center, Vec3 tangent) {
             var across = new Vec3(-tangent.z, 0, tangent.x).normalize().scale(HALF_SPACING);
             return new Head(center, across);
+        }
+
+        Head alignToHanger() {
+            return new Head(new Vec3(center.x, HangerFixture.wireY(center.y), center.z), across);
         }
 
         Vec3 supply() { return center.add(across); }

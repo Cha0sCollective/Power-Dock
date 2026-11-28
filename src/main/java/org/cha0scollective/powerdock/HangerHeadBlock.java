@@ -46,7 +46,13 @@ final class HangerHeadBlock extends BaseEntityBlock {
     @Override
     protected VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
         return level.getBlockEntity(anchor(pos, state)) instanceof CatenaryHangerBlockEntity hanger && hanger.mount() != null
-                ? hanger.mount().shape : CatenaryBlock.CASE;
+                ? hanger.mount().outline : CatenaryBlock.HANGER_CASE;
+    }
+
+    @Override
+    protected VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
+        return level.getBlockEntity(anchor(pos, state)) instanceof CatenaryHangerBlockEntity hanger && hanger.mount() != null
+                ? hanger.mount().shape : CatenaryBlock.HANGER_CASE;
     }
 
     @Override
